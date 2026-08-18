@@ -4,58 +4,30 @@ import pandas as pd
 from datetime import date, datetime
 
 # -------------------------------------------------------------
-# User Authentication & Role Setup
-# -------------------------------------------------------------
-USER_CREDENTIALS = {
-    "abhijit": "1234",
-    "jit": "1234",
-    "debasis": "1234",
-    "sumit": "1234"
-}
-
-ADMIN_USERS = ["abhijit", "jit"]
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-
-def login():
-    st.set_page_config(page_title="Login - Restaurant Ledger", layout="centered")
-    st.markdown("### 🔐 Restaurant Management Login")
-    st.info("Please enter your credentials to access the accounts.")
-    
-    with st.form("login_form"):
-        user = st.text_input("Username").strip().lower()
-        pwd = st.text_input("Password", type="password")
-        btn = st.form_submit_button("Log In", type="primary")
-        
-        if btn:
-            if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pwd:
-                st.session_state.logged_in = True
-                st.session_state.username = user
-                st.success("Login successful!")
-                st.rerun()
-            else:
-                st.error("Invalid Username or Password. Please try again.")
-
-def logout():
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.rerun()
-
-if not st.session_state.logged_in:
-    login()
-    st.stop()
-
-is_admin = st.session_state.username in ADMIN_USERS
-
-# -------------------------------------------------------------
-# Main Application
+# Database Setup & User Table
 # -------------------------------------------------------------
 conn = sqlite3.connect('restaurant_accounts.db', check_same_thread=False)
 c = conn.cursor()
 
-# Database Tables
+# Users Table for Dynamic Password Management
+c.execute('''
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    password TEXT,
+    role TEXT
+)''')
+
+# Insert Default Users if not exists
+default_users = [
+    ("abhijit", "1234", "admin"),
+    ("jit", "1234", "admin"),
+    ("debasis", "1234", "viewer"),
+    ("sumit", "1234", "viewer")
+]
+for u, p, r in default_users:
+    c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, r))
+
+# Existing Tables (Preserved without data loss)
 c.execute('''
 CREATE TABLE IF NOT EXISTS sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,7 +67,51 @@ CREATE TABLE IF NOT EXISTS inventory_log (
 )''')
 conn.commit()
 
-# Page Configuration
+# -------------------------------------------------------------
+# Authentication Flow
+# -------------------------------------------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.role = ""
+
+def login():
+    st.set_page_config(page_title="Login - Restaurant Ledger", layout="centered")
+    st.markdown("### 🔐 Restaurant Management Login")
+    st.info("Please enter your credentials to access the accounts.")
+    
+    with st.form("login_form"):
+        user = st.text_input("Username").strip().lower()
+        pwd = st.text_input("Password", type="password")
+        btn = st.form_submit_button("Log In", type="primary")
+        
+        if btn:
+            c.execute("SELECT password, role FROM users WHERE username = ?", (user,))
+            user_data = c.fetchone()
+            if user_data and user_data[0] == pwd:
+                st.session_state.logged_in = True
+                st.session_state.username = user
+                st.session_state.role = user_data[1]
+                st.success("Login successful!")
+                st.rerun()
+            else:
+                st.error("Invalid Username or Password. Please try again.")
+
+def logout():
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.role = ""
+    st.rerun()
+
+if not st.session_state.logged_in:
+    login()
+    st.stop()
+
+is_admin = (st.session_state.role == "admin")
+
+# -------------------------------------------------------------
+# Main Application UI
+# -------------------------------------------------------------
 st.set_page_config(page_title="Accounts & Stock Ledger", layout="wide")
 st.title("🍽️ Restaurant & Counter - Accounts & Inventory Ledger")
 
@@ -103,6 +119,45 @@ st.title("🍽️ Restaurant & Counter - Accounts & Inventory Ledger")
 role_badge = "👑 Admin (Full Access)" if is_admin else "👁️ Viewer (Read Only)"
 st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}**")
 st.sidebar.caption(f"Role: {role_badge}")
+
+# 1. Self Password Change (For All Users)
+with st.sidebar.expander("🔑 Change My Password"):
+    with st.form("change_pwd_form", clear_on_submit=True):
+        old_p = st.text_input("Current Password", type="password")
+        new_p = st.text_input("New Password", type="password")
+        conf_p = st.text_input("Confirm New Password", type="password")
+        update_p_btn = st.form_submit_button("Update Password")
+        
+        if update_p_btn:
+            c.execute("SELECT password FROM users WHERE username = ?", (st.session_state.username,))
+            curr_db_pwd = c.fetchone()[0]
+            
+            if old_p != curr_db_pwd:
+                st.error("Current password is incorrect.")
+            elif not new_p.strip():
+                st.error("New password cannot be empty.")
+            elif new_p != conf_p:
+                st.error("New passwords do not match.")
+            else:
+                c.execute("UPDATE users SET password = ? WHERE username = ?", (new_p.strip(), st.session_state.username))
+                conn.commit()
+                st.success("✅ Password changed successfully!")
+
+# 2. Master Password Reset (Admin Only)
+if is_admin:
+    with st.sidebar.expander("🛠️ Admin: Reset User Password"):
+        with st.form("admin_reset_form", clear_on_submit=True):
+            target_user = st.selectbox("Select User to Reset", ["abhijit", "jit", "debasis", "sumit"])
+            admin_new_pwd = st.text_input("Set New Password", value="1234")
+            reset_btn = st.form_submit_button("Reset Password Now")
+            
+            if reset_btn:
+                if admin_new_pwd.strip():
+                    c.execute("UPDATE users SET password = ? WHERE username = ?", (admin_new_pwd.strip(), target_user))
+                    conn.commit()
+                    st.success(f"✅ Password for {target_user.capitalize()} reset to: {admin_new_pwd.strip()}")
+                else:
+                    st.error("Password cannot be empty.")
 
 if st.sidebar.button("🚪 Logout"):
     logout()
@@ -149,7 +204,6 @@ if choice == "Daily Entry":
         st.stop()
 
     st.subheader("📝 Daily Sales & Expense Entry")
-    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -234,7 +288,6 @@ elif choice == "Daily Stock Register":
 
     with (col_st2 if is_admin else col_st2):
         st.markdown("### 📋 Daily Stock & Sales Register")
-        
         f_col1, f_col2 = st.columns(2)
         with f_col1:
             stk_start = st.date_input("From Date", value=date.today().replace(day=1), key="stk_start")
@@ -252,7 +305,6 @@ elif choice == "Daily Stock Register":
         
         if not df_stock.empty:
             st.dataframe(df_stock, use_container_width=True)
-            
             st.markdown("#### 📊 Total Quantity Sold in Selected Period")
             sold_sum = df_stock.groupby('Item')['Sold (Pcs)'].sum().reset_index()
             st.dataframe(sold_sum, use_container_width=True)
@@ -323,8 +375,6 @@ elif choice == "Reports & Analytics":
         net_profit = total_sale - total_exp
         
         st.markdown("---")
-        
-        # Highlighted Metric Cards
         card_col1, card_col2, card_col3 = st.columns(3)
         with card_col1:
             st.markdown(f"""
@@ -359,7 +409,6 @@ elif choice == "Reports & Analytics":
                 """, unsafe_allow_html=True)
                 
         st.markdown("---")
-        
         tab1, tab2 = st.tabs(["Sales Breakdown", "Expense Breakdown"])
         
         with tab1:
