@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+import io
 from datetime import date, datetime
 
 # -------------------------------------------------------------
@@ -9,7 +10,6 @@ from datetime import date, datetime
 conn = sqlite3.connect('restaurant_accounts.db', check_same_thread=False)
 c = conn.cursor()
 
-# Users Table for Dynamic Password Management
 c.execute('''
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT
 )''')
 
-# Insert Default Users if not exists
 default_users = [
     ("abhijit", "1234", "admin"),
     ("jit", "1234", "admin"),
@@ -27,7 +26,6 @@ default_users = [
 for u, p, r in default_users:
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, r))
 
-# Existing Tables (Preserved without data loss)
 c.execute('''
 CREATE TABLE IF NOT EXISTS sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,12 +113,10 @@ is_admin = (st.session_state.role == "admin")
 st.set_page_config(page_title="Accounts & Stock Ledger", layout="wide")
 st.title("🍽️ Restaurant & Counter - Accounts & Inventory Ledger")
 
-# Sidebar User Info & Role Badge
 role_badge = "👑 Admin (Full Access)" if is_admin else "👁️ Viewer (Read Only)"
 st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}**")
 st.sidebar.caption(f"Role: {role_badge}")
 
-# 1. Self Password Change (For All Users)
 with st.sidebar.expander("🔑 Change My Password"):
     with st.form("change_pwd_form", clear_on_submit=True):
         old_p = st.text_input("Current Password", type="password")
@@ -143,7 +139,6 @@ with st.sidebar.expander("🔑 Change My Password"):
                 conn.commit()
                 st.success("✅ Password changed successfully!")
 
-# 2. Master Password Reset (Admin Only)
 if is_admin:
     with st.sidebar.expander("🛠️ Admin: Reset User Password"):
         with st.form("admin_reset_form", clear_on_submit=True):
@@ -355,7 +350,7 @@ elif choice == "Daily Stock Register":
             st.info("No stock records found for the selected period.")
 
 # -------------------------------------------------------------
-# 3. Reports & Analytics Section (Color Highlighting)
+# 3. Reports & Analytics Section (with Excel Export)
 # -------------------------------------------------------------
 elif choice == "Reports & Analytics":
     st.subheader("📊 Business Summary & Profit / Loss Statement")
@@ -369,10 +364,37 @@ elif choice == "Reports & Analytics":
     if start_date <= end_date:
         df_sales = pd.read_sql_query("SELECT id as ID, entry_date as Date, counter_type as Counter, product_name as Product, quantity as Qty, amount as Amount FROM sales WHERE entry_date BETWEEN ? AND ?", conn, params=(start_date, end_date))
         df_exp = pd.read_sql_query("SELECT id as ID, entry_date as Date, category as Category, particulars as Particulars, amount as Amount FROM expenses WHERE entry_date BETWEEN ? AND ?", conn, params=(start_date, end_date))
-        
+        df_stock_exp = pd.read_sql_query("SELECT entry_date as Date, item_name as Item, opening_stock as Opening, added_stock as Added, closing_stock as Closing, sold_quantity as Sold_Qty FROM inventory_log WHERE entry_date BETWEEN ? AND ?", conn, params=(start_date, end_date))
+        df_cap_exp = pd.read_sql_query("SELECT entry_date as Date, partner_name as Partner, amount as Amount FROM capital ORDER BY entry_date DESC", conn)
+
         total_sale = df_sales['Amount'].sum() if not df_sales.empty else 0.0
         total_exp = df_exp['Amount'].sum() if not df_exp.empty else 0.0
         net_profit = total_sale - total_exp
+        
+        # --- Excel Generator ---
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            # Summary Sheet
+            df_summary = pd.DataFrame({
+                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss"],
+                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit]
+            })
+            df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
+            
+            # Sales & Expenses
+            df_sales.to_excel(writer, sheet_name='Sales Register', index=False)
+            df_exp.to_excel(writer, sheet_name='Expense Register', index=False)
+            df_stock_exp.to_excel(writer, sheet_name='Stock Register', index=False)
+            df_cap_exp.to_excel(writer, sheet_name='Capital Register', index=False)
+
+        excel_data = excel_buffer.getvalue()
+        
+        st.download_button(
+            label="📥 Download Full Account Book (.xlsx)",
+            data=excel_data,
+            file_name=f"Accounts_Report_{start_date}_to_{end_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
         
         st.markdown("---")
         card_col1, card_col2, card_col3 = st.columns(3)
