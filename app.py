@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 
 # Database Setup
 conn = sqlite3.connect('restaurant_accounts.db', check_same_thread=False)
@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS capital (
     amount REAL
 )''')
 
-# New Table for Daily Stock & Inventory
 c.execute('''
 CREATE TABLE IF NOT EXISTS inventory_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +53,31 @@ st.title("🍽️ Restaurant & Counter - Accounts & Inventory Ledger")
 
 menu = ["Daily Entry", "Daily Stock Register", "Reports & Analytics", "Capital Management"]
 choice = st.sidebar.selectbox("Select Menu", menu)
+
+PARTNERS_LIST = ["Abhijit", "Jit", "Debasis", "Sumit"]
+EXPENSE_CATEGORIES = [
+    "Raw Materials (Chicken, Fish, Eggs, Veg)", 
+    "Grocery & Spices", 
+    "Rent & Utility Bills", 
+    "Staff Salary & Daily Allowance", 
+    "Transportation & Marketing",
+    "Other Miscellaneous Expenses"
+]
+TRACKED_ITEMS = [
+    "Egg (Pcs)", 
+    "Water Bottle 1L", 
+    "Water Bottle 500 ml", 
+    "Campa Rs. 20", 
+    "Campa Rs. 10"
+]
+
+def parse_db_date(val):
+    if isinstance(val, date):
+        return val
+    try:
+        return datetime.strptime(str(val), "%Y-%m-%d").date()
+    except Exception:
+        return date.today()
 
 # -------------------------------------------------------------
 # 1. Daily Entry Section (Sales & Expenses)
@@ -87,14 +111,7 @@ if choice == "Daily Entry":
         st.markdown("### 💸 Expense Entry")
         with st.form("expense_form", clear_on_submit=True):
             e_date = st.date_input("Date", value=date.today(), key="e_date")
-            category = st.selectbox("Expense Category", [
-                "Raw Materials (Chicken, Fish, Eggs, Veg)", 
-                "Grocery & Spices", 
-                "Rent & Utility Bills", 
-                "Staff Salary & Daily Allowance", 
-                "Transportation & Marketing",
-                "Other Miscellaneous Expenses"
-            ])
+            category = st.selectbox("Expense Category", EXPENSE_CATEGORIES)
             particulars = st.text_input("Particulars / Details (e.g. 5kg Chicken, Mustard Oil, Gas Cylinder)")
             e_amount = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=0.0, step=10.0)
             
@@ -118,19 +135,11 @@ elif choice == "Daily Stock Register":
     
     col_st1, col_st2 = st.columns([1.1, 1.9])
     
-    tracked_items = [
-        "Egg (পিস)", 
-        "Water Bottle 1L", 
-        "Water Bottle 500 ml", 
-        "Campa Rs. 20", 
-        "Campa Rs. 10"
-    ]
-    
     with col_st1:
         st.markdown("### 📥 Record Daily Stock")
         with st.form("stock_form", clear_on_submit=True):
             stk_date = st.date_input("Date", value=date.today(), key="stk_date")
-            stk_item = st.selectbox("Select Item", tracked_items)
+            stk_item = st.selectbox("Select Item", TRACKED_ITEMS)
             
             op_stock = st.number_input("Opening Stock (Pcs)", min_value=0, value=0, step=1)
             add_stock = st.number_input("Stock Added / Purchased Today (Pcs)", min_value=0, value=0, step=1)
@@ -176,19 +185,51 @@ elif choice == "Daily Stock Register":
         if not df_stock.empty:
             st.dataframe(df_stock, use_container_width=True)
             
-            # Item-wise sold summary
             st.markdown("#### 📊 Total Quantity Sold in Selected Period")
             sold_sum = df_stock.groupby('Item')['Sold (Pcs)'].sum().reset_index()
             st.dataframe(sold_sum, use_container_width=True)
             
             st.markdown("---")
-            st.markdown("##### 🗑️ Delete Incorrect Stock Entry")
-            del_stock_id = st.selectbox("Select Stock Log ID to Delete", df_stock['ID'].tolist())
-            if st.button("Delete Selected Stock Record", type="primary"):
-                c.execute("DELETE FROM inventory_log WHERE id = ?", (del_stock_id,))
-                conn.commit()
-                st.success(f"Stock Record ID {del_stock_id} deleted successfully!")
-                st.rerun()
+            act_col1, act_col2 = st.columns(2)
+            
+            with act_col1:
+                st.markdown("##### ✏️ Edit Stock Entry")
+                edit_stock_id = st.selectbox("Select Stock ID to Edit", df_stock['ID'].tolist(), key="edit_stk_sel")
+                row_stk = df_stock[df_stock['ID'] == edit_stock_id].iloc[0]
+                
+                with st.form("edit_stock_form"):
+                    e_stk_date = st.date_input("Date", value=parse_db_date(row_stk['Date']), key="e_stk_d")
+                    current_item_val = row_stk['Item'] if row_stk['Item'] in TRACKED_ITEMS else TRACKED_ITEMS[0]
+                    e_stk_item = st.selectbox("Item", TRACKED_ITEMS, index=TRACKED_ITEMS.index(current_item_val), key="e_stk_i")
+                    e_op = st.number_input("Opening Stock", min_value=0, value=int(row_stk['Opening']), step=1, key="e_stk_op")
+                    e_add = st.number_input("Added Stock", min_value=0, value=int(row_stk['Added']), step=1, key="e_stk_add")
+                    e_cl = st.number_input("Closing Stock", min_value=0, value=int(row_stk['Closing']), step=1, key="e_stk_cl")
+                    
+                    e_tot = e_op + e_add
+                    e_sold = max(0, e_tot - e_cl)
+                    
+                    update_stk_btn = st.form_submit_button("Update Stock Record")
+                    if update_stk_btn:
+                        if e_cl > e_tot:
+                            st.error(f"Closing stock ({e_cl}) cannot be greater than Total Available ({e_tot})!")
+                        else:
+                            c.execute("""
+                                UPDATE inventory_log 
+                                SET entry_date = ?, item_name = ?, opening_stock = ?, added_stock = ?, closing_stock = ?, sold_quantity = ?
+                                WHERE id = ?
+                            """, (e_stk_date, e_stk_item, e_op, e_add, e_cl, e_sold, edit_stock_id))
+                            conn.commit()
+                            st.success(f"✅ Stock Record ID {edit_stock_id} updated successfully!")
+                            st.rerun()
+
+            with act_col2:
+                st.markdown("##### 🗑️ Delete Stock Entry")
+                del_stock_id = st.selectbox("Select Stock ID to Delete", df_stock['ID'].tolist(), key="del_stk_sel")
+                if st.button("Delete Stock Record", type="primary", key="btn_del_stk"):
+                    c.execute("DELETE FROM inventory_log WHERE id = ?", (del_stock_id,))
+                    conn.commit()
+                    st.success(f"Stock Record ID {del_stock_id} deleted successfully!")
+                    st.rerun()
         else:
             st.info("No stock records found for the selected period.")
 
@@ -225,21 +266,54 @@ elif choice == "Reports & Analytics":
             st.markdown("#### Product-wise Sales Summary")
             if not df_sales.empty:
                 prod_summary = df_sales.groupby('Product').agg({'Qty': 'sum', 'Amount': 'sum'}).reset_index()
-                prod_summary['Amount'] = prod_summary['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(prod_summary, use_container_width=True)
+                prod_summary_disp = prod_summary.copy()
+                prod_summary_disp['Amount'] = prod_summary_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
+                st.dataframe(prod_summary_disp, use_container_width=True)
                 
                 st.markdown("#### Detailed Sales Register")
                 df_sales_disp = df_sales.copy()
                 df_sales_disp['Amount'] = df_sales_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
                 st.dataframe(df_sales_disp, use_container_width=True)
                 
-                st.markdown("##### 🗑️ Delete Incorrect Sale Entry")
-                del_sale_id = st.selectbox("Select Sale ID to Delete", df_sales['ID'].tolist())
-                if st.button("Delete Sale Record", type="primary"):
-                    c.execute("DELETE FROM sales WHERE id = ?", (del_sale_id,))
-                    conn.commit()
-                    st.success(f"Sale record ID {del_sale_id} deleted successfully!")
-                    st.rerun()
+                st.markdown("---")
+                s_act1, s_act2 = st.columns(2)
+                
+                with s_act1:
+                    st.markdown("##### ✏️ Edit Sale Entry")
+                    edit_sale_id = st.selectbox("Select Sale ID to Edit", df_sales['ID'].tolist(), key="edit_s_sel")
+                    row_s = df_sales[df_sales['ID'] == edit_sale_id].iloc[0]
+                    
+                    with st.form("edit_sale_form"):
+                        es_date = st.date_input("Date", value=parse_db_date(row_s['Date']), key="es_d")
+                        counters = ["Outside Stall", "Inside Counter / Dining"]
+                        es_c_idx = counters.index(row_s['Counter']) if row_s['Counter'] in counters else 0
+                        es_counter = st.selectbox("Counter", counters, index=es_c_idx, key="es_c")
+                        es_prod = st.text_input("Product Name", value=str(row_s['Product']), key="es_p")
+                        es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['Qty']), step=1, key="es_q")
+                        es_amt = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=float(row_s['Amount']), step=10.0, key="es_a")
+                        
+                        update_sale_btn = st.form_submit_button("Update Sale Record")
+                        if update_sale_btn:
+                            if es_prod.strip():
+                                c.execute("""
+                                    UPDATE sales 
+                                    SET entry_date = ?, counter_type = ?, product_name = ?, quantity = ?, amount = ?
+                                    WHERE id = ?
+                                """, (es_date, es_counter, es_prod.strip(), es_qty, es_amt, edit_sale_id))
+                                conn.commit()
+                                st.success(f"✅ Sale Record ID {edit_sale_id} updated successfully!")
+                                st.rerun()
+                            else:
+                                st.error("Product name cannot be empty.")
+                                
+                with s_act2:
+                    st.markdown("##### 🗑️ Delete Sale Entry")
+                    del_sale_id = st.selectbox("Select Sale ID to Delete", df_sales['ID'].tolist(), key="del_s_sel")
+                    if st.button("Delete Sale Record", type="primary", key="btn_del_sale"):
+                        c.execute("DELETE FROM sales WHERE id = ?", (del_sale_id,))
+                        conn.commit()
+                        st.success(f"Sale record ID {del_sale_id} deleted successfully!")
+                        st.rerun()
             else:
                 st.info("No sales records found for this period.")
                 
@@ -247,21 +321,52 @@ elif choice == "Reports & Analytics":
             st.markdown("#### Category-wise Expense Summary")
             if not df_exp.empty:
                 cat_summary = df_exp.groupby('Category').agg({'Amount': 'sum'}).reset_index()
-                cat_summary['Amount'] = cat_summary['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(cat_summary, use_container_width=True)
+                cat_summary_disp = cat_summary.copy()
+                cat_summary_disp['Amount'] = cat_summary_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
+                st.dataframe(cat_summary_disp, use_container_width=True)
                 
                 st.markdown("#### Detailed Expense Register")
                 df_exp_disp = df_exp.copy()
                 df_exp_disp['Amount'] = df_exp_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
                 st.dataframe(df_exp_disp, use_container_width=True)
                 
-                st.markdown("##### 🗑️ Delete Incorrect Expense Entry")
-                del_exp_id = st.selectbox("Select Expense ID to Delete", df_exp['ID'].tolist())
-                if st.button("Delete Expense Record", type="primary"):
-                    c.execute("DELETE FROM expenses WHERE id = ?", (del_exp_id,))
-                    conn.commit()
-                    st.success(f"Expense record ID {del_exp_id} deleted successfully!")
-                    st.rerun()
+                st.markdown("---")
+                e_act1, e_act2 = st.columns(2)
+                
+                with e_act1:
+                    st.markdown("##### ✏️ Edit Expense Entry")
+                    edit_exp_id = st.selectbox("Select Expense ID to Edit", df_exp['ID'].tolist(), key="edit_e_sel")
+                    row_e = df_exp[df_exp['ID'] == edit_exp_id].iloc[0]
+                    
+                    with st.form("edit_expense_form"):
+                        ee_date = st.date_input("Date", value=parse_db_date(row_e['Date']), key="ee_d")
+                        ee_cat_idx = EXPENSE_CATEGORIES.index(row_e['Category']) if row_e['Category'] in EXPENSE_CATEGORIES else 0
+                        ee_cat = st.selectbox("Expense Category", EXPENSE_CATEGORIES, index=ee_cat_idx, key="ee_c")
+                        ee_part = st.text_input("Particulars / Details", value=str(row_e['Particulars']), key="ee_p")
+                        ee_amt = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=float(row_e['Amount']), step=10.0, key="ee_a")
+                        
+                        update_exp_btn = st.form_submit_button("Update Expense Record")
+                        if update_exp_btn:
+                            if ee_part.strip():
+                                c.execute("""
+                                    UPDATE expenses 
+                                    SET entry_date = ?, category = ?, particulars = ?, amount = ?
+                                    WHERE id = ?
+                                """, (ee_date, ee_cat, ee_part.strip(), ee_amt, edit_exp_id))
+                                conn.commit()
+                                st.success(f"✅ Expense Record ID {edit_exp_id} updated successfully!")
+                                st.rerun()
+                            else:
+                                st.error("Particulars details cannot be empty.")
+                                
+                with e_act2:
+                    st.markdown("##### 🗑️ Delete Expense Entry")
+                    del_exp_id = st.selectbox("Select Expense ID to Delete", df_exp['ID'].tolist(), key="del_e_sel")
+                    if st.button("Delete Expense Record", type="primary", key="btn_del_exp"):
+                        c.execute("DELETE FROM expenses WHERE id = ?", (del_exp_id,))
+                        conn.commit()
+                        st.success(f"Expense record ID {del_exp_id} deleted successfully!")
+                        st.rerun()
             else:
                 st.info("No expense records found for this period.")
     else:
@@ -279,7 +384,7 @@ elif choice == "Capital Management":
         st.markdown("### Add Partner Capital")
         with st.form("capital_form", clear_on_submit=True):
             c_date = st.date_input("Date", value=date.today())
-            partner = st.selectbox("Partner Name", ["Abhijit", "Jit", "Debasis", "Sumit"])
+            partner = st.selectbox("Partner Name", PARTNERS_LIST)
             cap_amount = st.number_input("Amount (Rs.)", min_value=0.0, value=0.0, step=500.0)
             
             submit_cap = st.form_submit_button("Record Capital")
@@ -309,12 +414,37 @@ elif choice == "Capital Management":
             st.dataframe(df_cap_all_disp, use_container_width=True)
             
             st.markdown("---")
-            st.markdown("##### 🗑️ Delete Incorrect Capital Entry")
-            del_id = st.selectbox("Select Capital ID to Delete", df_cap_all['ID'].tolist())
-            if st.button("Delete Selected Capital Record", type="primary"):
-                c.execute("DELETE FROM capital WHERE id = ?", (del_id,))
-                conn.commit()
-                st.success(f"Capital Record ID {del_id} deleted successfully!")
-                st.rerun()
+            cap_act1, cap_act2 = st.columns(2)
+            
+            with cap_act1:
+                st.markdown("##### ✏️ Edit Capital Entry")
+                edit_cap_id = st.selectbox("Select Capital ID to Edit", df_cap_all['ID'].tolist(), key="edit_cap_sel")
+                row_cap = df_cap_all[df_cap_all['ID'] == edit_cap_id].iloc[0]
+                
+                with st.form("edit_cap_form"):
+                    ec_date = st.date_input("Date", value=parse_db_date(row_cap['Date']), key="ec_d")
+                    ec_p_idx = PARTNERS_LIST.index(row_cap['Partner']) if row_cap['Partner'] in PARTNERS_LIST else 0
+                    ec_partner = st.selectbox("Partner Name", PARTNERS_LIST, index=ec_p_idx, key="ec_p")
+                    ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['Amount']), step=500.0, key="ec_a")
+                    
+                    update_cap_btn = st.form_submit_button("Update Capital Record")
+                    if update_cap_btn:
+                        c.execute("""
+                            UPDATE capital 
+                            SET entry_date = ?, partner_name = ?, amount = ?
+                            WHERE id = ?
+                        """, (ec_date, ec_partner, ec_amt, edit_cap_id))
+                        conn.commit()
+                        st.success(f"✅ Capital Record ID {edit_cap_id} updated successfully!")
+                        st.rerun()
+                        
+            with cap_act2:
+                st.markdown("##### 🗑️ Delete Capital Entry")
+                del_id = st.selectbox("Select Capital ID to Delete", df_cap_all['ID'].tolist(), key="del_cap_sel")
+                if st.button("Delete Capital Record", type="primary", key="btn_del_cap"):
+                    c.execute("DELETE FROM capital WHERE id = ?", (del_id,))
+                    conn.commit()
+                    st.success(f"Capital Record ID {del_id} deleted successfully!")
+                    st.rerun()
         else:
             st.info("No capital contributions recorded yet.")
