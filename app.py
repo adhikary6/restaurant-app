@@ -7,6 +7,7 @@ from datetime import date
 conn = sqlite3.connect('restaurant_accounts.db', check_same_thread=False)
 c = conn.cursor()
 
+# Existing Tables (Preserved without data loss)
 c.execute('''
 CREATE TABLE IF NOT EXISTS sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,16 +34,30 @@ CREATE TABLE IF NOT EXISTS capital (
     partner_name TEXT,
     amount REAL
 )''')
+
+# New Table for Daily Stock & Inventory
+c.execute('''
+CREATE TABLE IF NOT EXISTS inventory_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_date DATE,
+    item_name TEXT,
+    opening_stock INTEGER,
+    added_stock INTEGER,
+    closing_stock INTEGER,
+    sold_quantity INTEGER
+)''')
 conn.commit()
 
 # Page Configuration
-st.set_page_config(page_title="Accounts & Ledger", layout="wide")
-st.title("🍽️ Restaurant & Counter - Daily Accounts & Ledger")
+st.set_page_config(page_title="Accounts & Stock Ledger", layout="wide")
+st.title("🍽️ Restaurant & Counter - Accounts & Inventory Ledger")
 
-menu = ["Daily Entry", "Reports & Analytics", "Capital Management"]
+menu = ["Daily Entry", "Daily Stock Register", "Reports & Analytics", "Capital Management"]
 choice = st.sidebar.selectbox("Select Menu", menu)
 
-# 1. Daily Entry Section
+# -------------------------------------------------------------
+# 1. Daily Entry Section (Sales & Expenses)
+# -------------------------------------------------------------
 if choice == "Daily Entry":
     st.subheader("📝 Daily Sales & Expense Entry")
     
@@ -53,7 +68,7 @@ if choice == "Daily Entry":
         with st.form("sale_form", clear_on_submit=True):
             s_date = st.date_input("Date", value=date.today(), key="s_date")
             counter = st.selectbox("Counter / Location", ["Outside Stall", "Inside Counter / Dining"])
-            product = st.text_input("Product Name (e.g. Chicken Pakoda, Gile-Mete, Water, Cigarette)")
+            product = st.text_input("Product Name (e.g. Chicken Pakoda, Gile-Mete, Cigarette)")
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
             amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=0.0, step=10.0)
             
@@ -94,7 +109,92 @@ if choice == "Daily Entry":
                 else:
                     st.error("Please enter particulars details.")
 
-# 2. Reports & Analytics Section
+# -------------------------------------------------------------
+# 2. Daily Stock Register (Egg, Water, Campa)
+# -------------------------------------------------------------
+elif choice == "Daily Stock Register":
+    st.subheader("📦 Daily Stock & Automated Sales Tracker")
+    st.caption("Track stock movement: Daily Sold = (Opening + Added) - Closing")
+    
+    col_st1, col_st2 = st.columns([1.1, 1.9])
+    
+    tracked_items = [
+        "Egg (পিস)", 
+        "Water Bottle 1L", 
+        "Water Bottle 500 ml", 
+        "Campa Rs. 20", 
+        "Campa Rs. 10"
+    ]
+    
+    with col_st1:
+        st.markdown("### 📥 Record Daily Stock")
+        with st.form("stock_form", clear_on_submit=True):
+            stk_date = st.date_input("Date", value=date.today(), key="stk_date")
+            stk_item = st.selectbox("Select Item", tracked_items)
+            
+            op_stock = st.number_input("Opening Stock (Pcs)", min_value=0, value=0, step=1)
+            add_stock = st.number_input("Stock Added / Purchased Today (Pcs)", min_value=0, value=0, step=1)
+            cl_stock = st.number_input("Closing Stock at End of Day (Pcs)", min_value=0, value=0, step=1)
+            
+            total_available = op_stock + add_stock
+            calc_sold = max(0, total_available - cl_stock)
+            
+            st.info(f"💡 Calculated Daily Sold: **{calc_sold} Pcs**")
+            
+            submit_stock = st.form_submit_button("Save Stock Record")
+            if submit_stock:
+                if cl_stock > total_available:
+                    st.error(f"Closing stock ({cl_stock}) cannot be greater than Total Available ({total_available})!")
+                else:
+                    c.execute("""
+                        INSERT INTO inventory_log (entry_date, item_name, opening_stock, added_stock, closing_stock, sold_quantity)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (stk_date, stk_item, op_stock, add_stock, cl_stock, calc_sold))
+                    conn.commit()
+                    st.success(f"✅ Stock record for {stk_item} saved! ({calc_sold} pcs sold)")
+                    st.rerun()
+
+    with col_st2:
+        st.markdown("### 📋 Daily Stock & Sales Register")
+        
+        # Filter by Date Range
+        f_col1, f_col2 = st.columns(2)
+        with f_col1:
+            stk_start = st.date_input("From Date", value=date.today().replace(day=1), key="stk_start")
+        with f_col2:
+            stk_end = st.date_input("To Date", value=date.today(), key="stk_end")
+            
+        df_stock = pd.read_sql_query("""
+            SELECT id as ID, entry_date as Date, item_name as Item, 
+                   opening_stock as "Opening", added_stock as "Added", 
+                   closing_stock as "Closing", sold_quantity as "Sold (Pcs)"
+            FROM inventory_log
+            WHERE entry_date BETWEEN ? AND ?
+            ORDER BY entry_date DESC, id DESC
+        """, conn, params=(stk_start, stk_end))
+        
+        if not df_stock.empty:
+            st.dataframe(df_stock, use_container_width=True)
+            
+            # Item-wise sold summary
+            st.markdown("#### 📊 Total Quantity Sold in Selected Period")
+            sold_sum = df_stock.groupby('Item')['Sold (Pcs)'].sum().reset_index()
+            st.dataframe(sold_sum, use_container_width=True)
+            
+            st.markdown("---")
+            st.markdown("##### 🗑️ Delete Incorrect Stock Entry")
+            del_stock_id = st.selectbox("Select Stock Log ID to Delete", df_stock['ID'].tolist())
+            if st.button("Delete Selected Stock Record", type="primary"):
+                c.execute("DELETE FROM inventory_log WHERE id = ?", (del_stock_id,))
+                conn.commit()
+                st.success(f"Stock Record ID {del_stock_id} deleted successfully!")
+                st.rerun()
+        else:
+            st.info("No stock records found for the selected period.")
+
+# -------------------------------------------------------------
+# 3. Reports & Analytics Section
+# -------------------------------------------------------------
 elif choice == "Reports & Analytics":
     st.subheader("📊 Business Summary & Profit / Loss Statement")
     
@@ -167,7 +267,9 @@ elif choice == "Reports & Analytics":
     else:
         st.error("Start Date must be before or equal to End Date.")
 
-# 3. Capital Management Section
+# -------------------------------------------------------------
+# 4. Capital Management Section
+# -------------------------------------------------------------
 elif choice == "Capital Management":
     st.subheader("💼 Partner Capital & Investment Ledger")
     
