@@ -1,39 +1,32 @@
 import streamlit as st
 import pandas as pd
 import io
+import re
 from datetime import date, datetime
 from streamlit_gsheets import GSheetsConnection
 
 # MUST be the first Streamlit command
 st.set_page_config(page_title="Restaurant Management Ledger", layout="wide")
 
-# JavaScript: Focus এ অটোমেটিক ০ বা ০.০০ মুছে দেওয়া এবং Blurring এ কারেক্ট ডেসিমাল ফরম্যাট করা
+# JavaScript: Tap/Focus korle 0.00 auto-clear hobe
 st.markdown("""
 <script>
-const setupSmartInputs = () => {
-    const inputs = window.parent.document.querySelectorAll('input[data-testid="stNumberInput-Input"]');
+function attachSmartClear() {
+    const inputs = window.parent.document.querySelectorAll('input[data-testid="stTextInput-Input"]');
     inputs.forEach(input => {
-        if (!input.dataset.listenerAttached) {
-            input.dataset.listenerAttached = "true";
-            
+        if (!input.dataset.clearAttached) {
+            input.dataset.clearAttached = "true";
             input.addEventListener('focus', function() {
                 if (this.value === "0.00" || this.value === "0" || this.value === "0.0") {
                     this.value = "";
                 }
             });
-
-            input.addEventListener('blur', function() {
-                if (this.value.trim() === "") {
-                    this.value = "0.00";
-                }
-            });
         }
     });
-};
-
-const observer = new MutationObserver(setupSmartInputs);
-observer.observe(window.parent.document.body, { childList: true, subtree: true });
-setupSmartInputs();
+}
+const obs = new MutationObserver(attachSmartClear);
+obs.observe(window.parent.document.body, { childList: true, subtree: true });
+attachSmartClear();
 </script>
 """, unsafe_allow_html=True)
 
@@ -58,6 +51,16 @@ def get_sheet_data(worksheet_name, expected_cols):
 def update_sheet_data(worksheet_name, df):
     df_clean = df.copy()
     conn.update(worksheet=worksheet_name, data=df_clean)
+
+# Helper function to parse smart text input into float
+def parse_smart_amount(val_str):
+    if not val_str or not str(val_str).strip():
+        return 0.0
+    cleaned = re.sub(r"[^\d.]", "", str(val_str).strip())
+    try:
+        return float(cleaned)
+    except Exception:
+        return 0.0
 
 # Default Schemas
 USERS_COLS = ["username", "password", "role"]
@@ -270,10 +273,11 @@ if choice == "Daily Entry":
             counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
             product = st.text_input("Product Name (e.g. Total Sale, Chicken Pakoda, Water)")
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
-            amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=0.0, step=1.0, format="%.2f")
+            raw_amt_str = st.text_input("Total Sale Amount (Rs.)", value="0.00")
             
             submit_sale = st.form_submit_button("Save Sale to Google Sheets")
             if submit_sale:
+                final_amt = parse_smart_amount(raw_amt_str)
                 if product.strip():
                     df_sales = get_sheet_data("sales", SALES_COLS)
                     new_id = 1 if df_sales.empty else int(pd.to_numeric(df_sales['id'], errors='coerce').fillna(0).max() + 1)
@@ -283,11 +287,11 @@ if choice == "Daily Entry":
                         "counter_type": counter,
                         "product_name": product.strip(),
                         "quantity": int(quantity),
-                        "amount": float(amount)
+                        "amount": float(final_amt)
                     }])
                     df_sales = pd.concat([df_sales, new_row], ignore_index=True)
                     update_sheet_data("sales", df_sales)
-                    st.success("✅ Sale record saved permanently to Google Sheets!")
+                    st.success(f"✅ Sale of Rs. {final_amt:,.2f} saved permanently!")
                     st.rerun()
                 else:
                     st.error("Please enter a valid product name.")
@@ -298,10 +302,11 @@ if choice == "Daily Entry":
             e_date = st.date_input("Date", value=date.today(), key="e_date")
             category = st.selectbox("Expense Category", EXPENSE_CATEGORIES)
             particulars = st.text_input("Particulars / Details (e.g. Chicken, Grocery, Gas)")
-            e_amount = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=0.0, step=1.0, format="%.2f")
+            raw_exp_str = st.text_input("Expense Amount (Rs.)", value="0.00")
             
             submit_exp = st.form_submit_button("Save Expense to Google Sheets")
             if submit_exp:
+                final_e_amt = parse_smart_amount(raw_exp_str)
                 if particulars.strip():
                     df_exp = get_sheet_data("expenses", EXPENSES_COLS)
                     new_id = 1 if df_exp.empty else int(pd.to_numeric(df_exp['id'], errors='coerce').fillna(0).max() + 1)
@@ -310,11 +315,11 @@ if choice == "Daily Entry":
                         "entry_date": str(e_date),
                         "category": category,
                         "particulars": particulars.strip(),
-                        "amount": float(e_amount)
+                        "amount": float(final_e_amt)
                     }])
                     df_exp = pd.concat([df_exp, new_row], ignore_index=True)
                     update_sheet_data("expenses", df_exp)
-                    st.success("✅ Expense record saved permanently to Google Sheets!")
+                    st.success(f"✅ Expense of Rs. {final_e_amt:,.2f} saved permanently!")
                     st.rerun()
                 else:
                     st.error("Please enter particulars details.")
@@ -545,9 +550,11 @@ elif choice == "Reports & Analytics":
                             es_counter = st.selectbox("Counter", counters, index=es_c_idx, key="es_c")
                             es_prod = st.text_input("Product Name", value=str(row_s['product_name']), key="es_p")
                             es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['quantity']), step=1, key="es_q")
-                            es_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_s['amount']), step=1.0, format="%.2f", key="es_a")
+                            curr_s_val = f"{float(row_s['amount']):.2f}"
+                            raw_es_amt_str = st.text_input("Amount (Rs.)", value=curr_s_val, key="es_a")
                             
                             if st.form_submit_button("Update Sale Record"):
+                                es_amt = parse_smart_amount(raw_es_amt_str)
                                 idx = df_sales_raw[df_sales_raw['id'] == edit_sale_id].index[0]
                                 df_sales_raw.loc[idx, ['entry_date', 'counter_type', 'product_name', 'quantity', 'amount']] = [
                                     str(es_date), es_counter, es_prod.strip(), int(es_qty), float(es_amt)
@@ -586,9 +593,11 @@ elif choice == "Reports & Analytics":
                             ee_cat_idx = EXPENSE_CATEGORIES.index(row_e['category']) if row_e['category'] in EXPENSE_CATEGORIES else 0
                             ee_cat = st.selectbox("Expense Category", EXPENSE_CATEGORIES, index=ee_cat_idx, key="ee_c")
                             ee_part = st.text_input("Particulars / Details", value=str(row_e['particulars']), key="ee_p")
-                            ee_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_e['amount']), step=1.0, format="%.2f", key="ee_a")
+                            curr_e_val = f"{float(row_e['amount']):.2f}"
+                            raw_ee_amt_str = st.text_input("Amount (Rs.)", value=curr_e_val, key="ee_a")
                             
                             if st.form_submit_button("Update Expense Record"):
+                                ee_amt = parse_smart_amount(raw_ee_amt_str)
                                 idx = df_exp_raw[df_exp_raw['id'] == edit_exp_id].index[0]
                                 df_exp_raw.loc[idx, ['entry_date', 'category', 'particulars', 'amount']] = [
                                     str(ee_date), ee_cat, ee_part.strip(), float(ee_amt)
@@ -622,9 +631,10 @@ elif choice == "Capital Management":
             with st.form("capital_form", clear_on_submit=True):
                 c_date = st.date_input("Date", value=date.today())
                 partner = st.selectbox("Partner Name", PARTNERS_LIST)
-                cap_amount = st.number_input("Amount (Rs.)", min_value=0.0, value=0.0, step=100.0, format="%.2f")
+                raw_cap_amt_str = st.text_input("Amount (Rs.)", value="0.00")
                 
                 if st.form_submit_button("Record Capital"):
+                    cap_amount = parse_smart_amount(raw_cap_amt_str)
                     df_cap = get_sheet_data("capital", CAPITAL_COLS)
                     new_id = 1 if df_cap.empty else int(pd.to_numeric(df_cap['id'], errors='coerce').fillna(0).max() + 1)
                     new_row = pd.DataFrame([{
@@ -635,7 +645,7 @@ elif choice == "Capital Management":
                     }])
                     df_cap = pd.concat([df_cap, new_row], ignore_index=True)
                     update_sheet_data("capital", df_cap)
-                    st.success(f"✅ Capital for {partner} saved to Google Sheets!")
+                    st.success(f"✅ Capital of Rs. {cap_amount:,.2f} for {partner} saved to Google Sheets!")
                     st.rerun()
                     
     with (col_c2 if is_admin else col_c2):
@@ -672,9 +682,11 @@ elif choice == "Capital Management":
                         ec_date = st.date_input("Date", value=parse_db_date(row_cap['entry_date']), key="ec_d")
                         ec_p_idx = PARTNERS_LIST.index(row_cap['partner_name']) if row_cap['partner_name'] in PARTNERS_LIST else 0
                         ec_partner = st.selectbox("Partner Name", PARTNERS_LIST, index=ec_p_idx, key="ec_p")
-                        ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['amount']), step=100.0, format="%.2f", key="ec_a")
+                        curr_cap_val = f"{float(row_cap['amount']):.2f}"
+                        raw_ec_amt_str = st.text_input("Amount (Rs.)", value=curr_cap_val, key="ec_a")
                         
                         if st.form_submit_button("Update Capital Record"):
+                            ec_amt = parse_smart_amount(raw_ec_amt_str)
                             idx = df_cap[df_cap['id'] == edit_cap_id].index[0]
                             df_cap.loc[idx, ['entry_date', 'partner_name', 'amount']] = [
                                 str(ec_date), ec_partner, float(ec_amt)
