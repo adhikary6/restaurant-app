@@ -9,7 +9,7 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="Restaurant Management Ledger", layout="wide")
 
 # -------------------------------------------------------------
-# Custom CSS for Blinking Dots and Top Segmented Navigation
+# Custom CSS for Blinking Dots and Neon Light-On Navigation Buttons
 # -------------------------------------------------------------
 st.markdown("""
 <style>
@@ -36,46 +36,35 @@ st.markdown("""
     border-radius: 50%;
     margin-right: 6px;
 }
-/* Top Segmented Navigation Styling */
-div[data-testid="stRadio"] > div[role="radiogroup"] {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 8px;
-    background-color: #f1f5f9;
-    padding: 6px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    border: 1px solid #e2e8f0;
+
+/* Light-On Navigation Buttons */
+div[data-testid="stButton"] button {
+    height: 52px !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+    border: 1.5px solid #cbd5e1 !important;
+    background-color: #f8fafc !important;
+    color: #334155 !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04) !important;
+    transition: all 0.25s ease-in-out !important;
 }
-div[data-testid="stRadio"] > div[role="radiogroup"] > label {
-    flex: 1 1 auto;
-    background-color: #ffffff;
-    padding: 10px 16px;
-    border-radius: 8px;
-    border: 1px solid #cbd5e1;
-    margin: 0 !important;
-    text-align: center;
-    font-weight: 500;
-    color: #475569;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    transition: all 0.2s ease-in-out;
-    cursor: pointer;
+
+div[data-testid="stButton"] button:hover {
+    border-color: #94a3b8 !important;
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
 }
-div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
-    background-color: #e2e8f0;
-    color: #0f172a;
-}
-div[data-testid="stRadio"] > div[role="radiogroup"] > label[data-checked="true"],
-div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
-    background-color: #0f172a !important;
-    color: #ffffff !important;
+
+/* Glowing Neon Active State (when primary button type is used) */
+div[data-testid="stButton"] button[kind="primary"] {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+    color: #38bdf8 !important;
+    border: 1.5px solid #38bdf8 !important;
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.45), inset 0 0 8px rgba(56, 189, 248, 0.2) !important;
+    text-shadow: 0 0 10px rgba(56, 189, 248, 0.75) !important;
     font-weight: 700 !important;
-    border-color: #0f172a !important;
-    box-shadow: 0 3px 6px rgba(15, 23, 42, 0.25);
-}
-div[data-testid="stRadio"] > div[role="radiogroup"] > label div:first-child {
-    display: none;
+    transform: translateY(-1px);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -144,6 +133,9 @@ if "logged_in" not in st.session_state:
     st.session_state.username = ""
     st.session_state.role = ""
 
+if "current_nav_section" not in st.session_state:
+    st.session_state.current_nav_section = "📝 Daily Entry"
+
 def update_user_heartbeat(username):
     try:
         df_u = get_sheet_data("users", USERS_COLS)
@@ -176,6 +168,7 @@ def login():
                 st.session_state.logged_in = True
                 st.session_state.username = user
                 st.session_state.role = str(user_row.iloc[0]['role']).strip().lower()
+                st.session_state.current_nav_section = "📝 Daily Entry" if st.session_state.role == "admin" else "📊 Reports & Analytics"
                 update_user_heartbeat(user)
                 st.success("Login successful!")
                 st.rerun()
@@ -203,6 +196,10 @@ if not st.session_state.logged_in:
     st.stop()
 
 is_admin = (st.session_state.role == "admin")
+
+# Ensure Viewer defaults to Reports
+if not is_admin and st.session_state.current_nav_section == "📝 Daily Entry":
+    st.session_state.current_nav_section = "📊 Reports & Analytics"
 
 # Get User Short Initials (AA for Abhijit, JB for Jit)
 def get_user_initials(uname):
@@ -318,7 +315,7 @@ online_html = " ".join([f"<span style='background:#dcfce7; color:#15803d; paddin
 offline_html = " ".join([f"<span style='background:#f1f5f9; color:#64748b; padding:3px 10px; border-radius:12px; font-weight:500; margin-right:5px; display:inline-flex; align-items:center;'><span class='off-dot'></span>{u}</span>" for u in offline_users])
 
 st.markdown(f"""
-<div style="background-color:#ffffff; border:1px solid #e2e8f0; padding:10px 16px; border-radius:10px; margin-bottom:14px; display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
+<div style="background-color:#ffffff; border:1px solid #e2e8f0; padding:10px 16px; border-radius:10px; margin-bottom:16px; display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
     <div style="display:flex; align-items:center;">
         <b style="color:#0f172a; margin-right:8px;">Online ({len(online_users)}):</b> {online_html if online_users else '<span style=\"color:#94a3b8;\">None</span>'}
     </div>
@@ -330,14 +327,39 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# Top Horizontal Segmented Navigation Menu (Dark Active / Light Inactive)
+# Top Large Button Navigation Bar with Neon Light-On Effect
 # -------------------------------------------------------------
 if is_admin:
-    menu_options = ["📝 Daily Entry", "📦 Daily Stock Register", "📊 Reports & Analytics", "💼 Capital Management"]
+    nav_btn_cols = st.columns(4)
+    nav_items = [
+        ("📝 Daily Entry", "📝 Daily Entry"),
+        ("📦 Daily Stock Register", "📦 Daily Stock Register"),
+        ("📊 Reports & Analytics", "📊 Reports & Analytics"),
+        ("💼 Capital Management", "💼 Capital Management")
+    ]
+    for idx, (label, val) in enumerate(nav_items):
+        with nav_btn_cols[idx]:
+            is_active = (st.session_state.current_nav_section == val)
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(label, key=f"top_nav_{idx}", type=btn_type, use_container_width=True):
+                st.session_state.current_nav_section = val
+                st.rerun()
 else:
-    menu_options = ["📊 Reports & Analytics", "📦 Daily Stock Register", "💼 Capital Management"]
+    nav_btn_cols = st.columns(3)
+    nav_items = [
+        ("📊 Reports & Analytics", "📊 Reports & Analytics"),
+        ("📦 Daily Stock Register", "📦 Daily Stock Register"),
+        ("💼 Capital Management", "💼 Capital Management")
+    ]
+    for idx, (label, val) in enumerate(nav_items):
+        with nav_btn_cols[idx]:
+            is_active = (st.session_state.current_nav_section == val)
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(label, key=f"top_nav_viewer_{idx}", type=btn_type, use_container_width=True):
+                st.session_state.current_nav_section = val
+                st.rerun()
 
-choice = st.radio("", menu_options, horizontal=True, label_visibility="collapsed")
+choice = st.session_state.current_nav_section
 
 # Sidebar profile & credentials
 role_badge = f"👑 Admin ({current_user_tag})" if is_admin else f"👁️ Viewer ({current_user_tag})"
@@ -386,6 +408,8 @@ def parse_db_date(val):
         return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
     except Exception:
         return date.today()
+
+st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
 # 1. Daily Entry Section
@@ -681,7 +705,6 @@ elif choice == "📊 Reports & Analytics":
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         avg_col1, avg_col2 = st.columns(2)
         
-        # Color coding: Green if Avg Sale >= Avg Exp, else Red
         is_avg_sale_higher = (avg_sale_day >= avg_exp_day)
         sale_card_bg = "#f0fdf4" if is_avg_sale_higher else "#fff1f2"
         sale_card_border = "#86efac" if is_avg_sale_higher else "#fecdd3"
