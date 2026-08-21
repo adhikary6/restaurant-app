@@ -5,11 +5,12 @@ import io
 from datetime import date, datetime
 
 # -------------------------------------------------------------
-# Database Setup & User Table
+# Database Setup & Initial Data Insertion
 # -------------------------------------------------------------
 conn = sqlite3.connect('restaurant_accounts.db', check_same_thread=False)
 c = conn.cursor()
 
+# 1. Users Table
 c.execute('''
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
@@ -26,6 +27,7 @@ default_users = [
 for u, p, r in default_users:
     c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, r))
 
+# 2. Sales Table
 c.execute('''
 CREATE TABLE IF NOT EXISTS sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,6 +38,19 @@ CREATE TABLE IF NOT EXISTS sales (
     counter_type TEXT
 )''')
 
+# Initial Sales Data Restoration
+initial_sales = [
+    (1, "2026-08-14", "Total Sale", 1, 1920.0, "Inside Counter / Dining"),
+    (2, "2026-08-16", "Total Sale without water", 1, 2522.0, "Inside Counter / Dining"),
+    (3, "2026-08-17", "Total Sale without water", 1, 2010.0, "Inside Counter / Dining"),
+    (4, "2026-08-18", "Total Food", 1, 2220.0, "Inside Counter / Dining"),
+    (5, "2026-08-18", "Water", 1, 580.0, "Inside Counter / Dining")
+]
+c.execute("SELECT COUNT(*) FROM sales")
+if c.fetchone()[0] == 0:
+    c.executemany("INSERT INTO sales (id, entry_date, product_name, quantity, amount, counter_type) VALUES (?, ?, ?, ?, ?, ?)", initial_sales)
+
+# 3. Expenses Table
 c.execute('''
 CREATE TABLE IF NOT EXISTS expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,6 +60,22 @@ CREATE TABLE IF NOT EXISTS expenses (
     amount REAL
 )''')
 
+# Initial Expense Data Restoration
+initial_expenses = [
+    (2, "2026-08-13", "Plate and Cutlery", "Other Miscellaneous Expenses", 1240.0),
+    (3, "2026-08-13", "Water Bottle", "Grocery & Spices", 940.0),
+    (4, "2026-08-14", "Chicken", "Raw Materials (Chicken, Fish, Eggs, Veg)", 440.0),
+    (5, "2026-08-14", "Grocery", "Grocery & Spices", 4550.0),
+    (6, "2026-08-16", "Grocery and Egg", "Grocery & Spices", 552.0),
+    (7, "2026-08-16", "Cold Drinks Campa", "Grocery & Spices", 650.0),
+    (8, "2026-08-18", "Gas Cylinder", "Other Miscellaneous Expenses", 2935.0),
+    (9, "2026-08-16", "Chicken 4 Kg", "Raw Materials (Chicken, Fish, Eggs, Veg)", 800.0)
+]
+c.execute("SELECT COUNT(*) FROM expenses")
+if c.fetchone()[0] == 0:
+    c.executemany("INSERT INTO expenses (id, entry_date, particulars, category, amount) VALUES (?, ?, ?, ?, ?)", initial_expenses)
+
+# 4. Capital Table
 c.execute('''
 CREATE TABLE IF NOT EXISTS capital (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,6 +84,18 @@ CREATE TABLE IF NOT EXISTS capital (
     amount REAL
 )''')
 
+# Initial Capital Data Restoration
+initial_capital = [
+    (1, "2026-08-11", "Abhijit", 10000.0),
+    (2, "2026-08-11", "Jit", 10000.0),
+    (3, "2026-08-16", "Debasis", 10000.0),
+    (4, "2026-08-11", "Sumit", 0.0)
+]
+c.execute("SELECT COUNT(*) FROM capital")
+if c.fetchone()[0] == 0:
+    c.executemany("INSERT INTO capital (id, entry_date, partner_name, amount) VALUES (?, ?, ?, ?)", initial_capital)
+
+# 5. Inventory Log Table
 c.execute('''
 CREATE TABLE IF NOT EXISTS inventory_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +106,20 @@ CREATE TABLE IF NOT EXISTS inventory_log (
     closing_stock INTEGER,
     sold_quantity INTEGER
 )''')
+
+# Initial Inventory Data Restoration
+initial_inventory = [
+    (1, "2026-08-14", "Egg (পিস)", 0, 60, 18, 42),
+    (2, "2026-08-16", "Egg (পিস)", 18, 60, 35, 43),
+    (3, "2026-08-17", "Egg (পিস)", 35, 120, 114, 41),
+    (4, "2026-08-18", "Egg (পিস)", 114, 0, 89, 25),
+    (5, "2026-08-18", "Campa Rs. 10", 22, 0, 22, 0),
+    (6, "2026-08-18", "Campa Rs. 20", 16, 0, 9, 7)
+]
+c.execute("SELECT COUNT(*) FROM inventory_log")
+if c.fetchone()[0] == 0:
+    c.executemany("INSERT INTO inventory_log (id, entry_date, item_name, opening_stock, added_stock, closing_stock, sold_quantity) VALUES (?, ?, ?, ?, ?, ?, ?)", initial_inventory)
+
 conn.commit()
 
 # -------------------------------------------------------------
@@ -175,7 +232,7 @@ EXPENSE_CATEGORIES = [
     "Other Miscellaneous Expenses"
 ]
 TRACKED_ITEMS = [
-    "Egg (Pcs)", 
+    "Egg (পিস)", 
     "Water Bottle 1L", 
     "Water Bottle 500 ml", 
     "Campa Rs. 20", 
@@ -205,7 +262,7 @@ if choice == "Daily Entry":
         st.markdown("### 💰 Sales Entry")
         with st.form("sale_form", clear_on_submit=True):
             s_date = st.date_input("Date", value=date.today(), key="s_date")
-            counter = st.selectbox("Counter / Location", ["Outside Stall", "Inside Counter / Dining"])
+            counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
             product = st.text_input("Product Name (e.g. Chicken Pakoda, Gile-Mete, Cigarette)")
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
             amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=0.0, step=10.0)
@@ -280,7 +337,7 @@ elif choice == "Daily Stock Register":
         st.markdown("### 📋 Daily Stock & Sales Register")
         f_col1, f_col2 = st.columns(2)
         with f_col1:
-            stk_start = st.date_input("From Date", value=date.today().replace(day=1), key="stk_start")
+            stk_start = st.date_input("From Date", value=date(2026, 8, 1), key="stk_start")
         with f_col2:
             stk_end = st.date_input("To Date", value=date.today(), key="stk_end")
             
@@ -347,7 +404,7 @@ elif choice == "Reports & Analytics":
     
     col_d1, col_d2 = st.columns(2)
     with col_d1:
-        start_date = st.date_input("Start Date", value=date.today().replace(day=1))
+        start_date = st.date_input("Start Date", value=date(2026, 8, 1))
     with col_d2:
         end_date = st.date_input("End Date", value=date.today())
         
@@ -440,7 +497,7 @@ elif choice == "Reports & Analytics":
                         
                         with st.form("edit_sale_form"):
                             es_date = st.date_input("Date", value=parse_db_date(row_s['Date']), key="es_d")
-                            counters = ["Outside Stall", "Inside Counter / Dining"]
+                            counters = ["Inside Counter / Dining", "Outside Stall"]
                             es_c_idx = counters.index(row_s['Counter']) if row_s['Counter'] in counters else 0
                             es_counter = st.selectbox("Counter", counters, index=es_c_idx, key="es_c")
                             es_prod = st.text_input("Product Name", value=str(row_s['Product']), key="es_p")
