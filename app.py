@@ -1,126 +1,36 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 import io
 from datetime import date, datetime
+from streamlit_gsheets import GSheetsConnection
 
 # -------------------------------------------------------------
-# Database Setup & Initial Data Insertion
+# Google Sheets Connection Setup
 # -------------------------------------------------------------
-conn = sqlite3.connect('restaurant_accounts.db', check_same_thread=False)
-c = conn.cursor()
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 1. Users Table
-c.execute('''
-CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY,
-    password TEXT,
-    role TEXT
-)''')
+def get_sheet_data(worksheet_name, expected_cols):
+    try:
+        df = conn.read(worksheet=worksheet_name, ttl=0)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=expected_cols)
+        df = df.dropna(how='all')
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+        return df[expected_cols]
+    except Exception:
+        return pd.DataFrame(columns=expected_cols)
 
-default_users = [
-    ("abhijit", "1234", "admin"),
-    ("jit", "1234", "admin"),
-    ("debasis", "1234", "viewer"),
-    ("sumit", "1234", "viewer")
-]
-for u, p, r in default_users:
-    c.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, r))
+def update_sheet_data(worksheet_name, df):
+    conn.update(worksheet=worksheet_name, data=df)
 
-# 2. Sales Table
-c.execute('''
-CREATE TABLE IF NOT EXISTS sales (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_date DATE,
-    product_name TEXT,
-    quantity INTEGER,
-    amount REAL,
-    counter_type TEXT
-)''')
-
-# Initial Sales Data Restoration
-initial_sales = [
-    (1, "2026-08-14", "Total Sale", 1, 1920.0, "Inside Counter / Dining"),
-    (2, "2026-08-16", "Total Sale without water", 1, 2522.0, "Inside Counter / Dining"),
-    (3, "2026-08-17", "Total Sale without water", 1, 2010.0, "Inside Counter / Dining"),
-    (4, "2026-08-18", "Total Food", 1, 2220.0, "Inside Counter / Dining"),
-    (5, "2026-08-18", "Water", 1, 580.0, "Inside Counter / Dining")
-]
-c.execute("SELECT COUNT(*) FROM sales")
-if c.fetchone()[0] == 0:
-    c.executemany("INSERT INTO sales (id, entry_date, product_name, quantity, amount, counter_type) VALUES (?, ?, ?, ?, ?, ?)", initial_sales)
-
-# 3. Expenses Table
-c.execute('''
-CREATE TABLE IF NOT EXISTS expenses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_date DATE,
-    particulars TEXT,
-    category TEXT,
-    amount REAL
-)''')
-
-# Initial Expense Data Restoration
-initial_expenses = [
-    (2, "2026-08-13", "Plate and Cutlery", "Other Miscellaneous Expenses", 1240.0),
-    (3, "2026-08-13", "Water Bottle", "Grocery & Spices", 940.0),
-    (4, "2026-08-14", "Chicken", "Raw Materials (Chicken, Fish, Eggs, Veg)", 440.0),
-    (5, "2026-08-14", "Grocery", "Grocery & Spices", 4550.0),
-    (6, "2026-08-16", "Grocery and Egg", "Grocery & Spices", 552.0),
-    (7, "2026-08-16", "Cold Drinks Campa", "Grocery & Spices", 650.0),
-    (8, "2026-08-18", "Gas Cylinder", "Other Miscellaneous Expenses", 2935.0),
-    (9, "2026-08-16", "Chicken 4 Kg", "Raw Materials (Chicken, Fish, Eggs, Veg)", 800.0)
-]
-c.execute("SELECT COUNT(*) FROM expenses")
-if c.fetchone()[0] == 0:
-    c.executemany("INSERT INTO expenses (id, entry_date, particulars, category, amount) VALUES (?, ?, ?, ?, ?)", initial_expenses)
-
-# 4. Capital Table
-c.execute('''
-CREATE TABLE IF NOT EXISTS capital (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_date DATE,
-    partner_name TEXT,
-    amount REAL
-)''')
-
-# Initial Capital Data Restoration
-initial_capital = [
-    (1, "2026-08-11", "Abhijit", 10000.0),
-    (2, "2026-08-11", "Jit", 10000.0),
-    (3, "2026-08-16", "Debasis", 10000.0),
-    (4, "2026-08-11", "Sumit", 0.0)
-]
-c.execute("SELECT COUNT(*) FROM capital")
-if c.fetchone()[0] == 0:
-    c.executemany("INSERT INTO capital (id, entry_date, partner_name, amount) VALUES (?, ?, ?, ?)", initial_capital)
-
-# 5. Inventory Log Table
-c.execute('''
-CREATE TABLE IF NOT EXISTS inventory_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_date DATE,
-    item_name TEXT,
-    opening_stock INTEGER,
-    added_stock INTEGER,
-    closing_stock INTEGER,
-    sold_quantity INTEGER
-)''')
-
-# Initial Inventory Data Restoration
-initial_inventory = [
-    (1, "2026-08-14", "Egg (পিস)", 0, 60, 18, 42),
-    (2, "2026-08-16", "Egg (পিস)", 18, 60, 35, 43),
-    (3, "2026-08-17", "Egg (পিস)", 35, 120, 114, 41),
-    (4, "2026-08-18", "Egg (পিস)", 114, 0, 89, 25),
-    (5, "2026-08-18", "Campa Rs. 10", 22, 0, 22, 0),
-    (6, "2026-08-18", "Campa Rs. 20", 16, 0, 9, 7)
-]
-c.execute("SELECT COUNT(*) FROM inventory_log")
-if c.fetchone()[0] == 0:
-    c.executemany("INSERT INTO inventory_log (id, entry_date, item_name, opening_stock, added_stock, closing_stock, sold_quantity) VALUES (?, ?, ?, ?, ?, ?, ?)", initial_inventory)
-
-conn.commit()
+# Default Schemas
+USERS_COLS = ["username", "password", "role"]
+SALES_COLS = ["id", "entry_date", "counter_type", "product_name", "quantity", "amount"]
+EXPENSES_COLS = ["id", "entry_date", "category", "particulars", "amount"]
+CAPITAL_COLS = ["id", "entry_date", "partner_name", "amount"]
+INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock", "closing_stock", "sold_quantity"]
 
 # -------------------------------------------------------------
 # Authentication Flow
@@ -133,7 +43,7 @@ if "logged_in" not in st.session_state:
 def login():
     st.set_page_config(page_title="Login - Restaurant Ledger", layout="centered")
     st.markdown("### 🔐 Restaurant Management Login")
-    st.info("Please enter your credentials to access the accounts.")
+    st.info("Google Sheets Connected Cloud Ledger")
     
     with st.form("login_form"):
         user = st.text_input("Username").strip().lower()
@@ -141,12 +51,13 @@ def login():
         btn = st.form_submit_button("Log In", type="primary")
         
         if btn:
-            c.execute("SELECT password, role FROM users WHERE username = ?", (user,))
-            user_data = c.fetchone()
-            if user_data and user_data[0] == pwd:
+            df_users = get_sheet_data("users", USERS_COLS)
+            user_row = df_users[df_users['username'].astype(str).str.lower() == user]
+            
+            if not user_row.empty and str(user_row.iloc[0]['password']) == str(pwd):
                 st.session_state.logged_in = True
                 st.session_state.username = user
-                st.session_state.role = user_data[1]
+                st.session_state.role = str(user_row.iloc[0]['role'])
                 st.success("Login successful!")
                 st.rerun()
             else:
@@ -168,7 +79,7 @@ is_admin = (st.session_state.role == "admin")
 # Main Application UI
 # -------------------------------------------------------------
 st.set_page_config(page_title="Accounts & Stock Ledger", layout="wide")
-st.title("🍽️ Restaurant & Counter - Accounts & Inventory Ledger")
+st.title("🍽️ Restaurant & Counter - Cloud Accounts Ledger")
 
 role_badge = "👑 Admin (Full Access)" if is_admin else "👁️ Viewer (Read Only)"
 st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}**")
@@ -182,38 +93,21 @@ with st.sidebar.expander("🔑 Change My Password"):
         update_p_btn = st.form_submit_button("Update Password")
         
         if update_p_btn:
-            c.execute("SELECT password FROM users WHERE username = ?", (st.session_state.username,))
-            curr_db_pwd = c.fetchone()[0]
+            df_users = get_sheet_data("users", USERS_COLS)
+            user_idx = df_users[df_users['username'].astype(str).str.lower() == st.session_state.username].index
             
-            if old_p != curr_db_pwd:
-                st.error("Current password is incorrect.")
-            elif not new_p.strip():
-                st.error("New password cannot be empty.")
-            elif new_p != conf_p:
-                st.error("New passwords do not match.")
-            else:
-                c.execute("UPDATE users SET password = ? WHERE username = ?", (new_p.strip(), st.session_state.username))
-                conn.commit()
-                st.success("✅ Password changed successfully!")
-
-if is_admin:
-    with st.sidebar.expander("🛠️ Admin: Reset User Password"):
-        with st.form("admin_reset_form", clear_on_submit=True):
-            target_user = st.selectbox("Select User to Reset", ["abhijit", "jit", "debasis", "sumit"])
-            admin_new_pwd = st.text_input("Set New Password", value="1234")
-            reset_btn = st.form_submit_button("Reset Password Now")
-            
-            if reset_btn:
-                if admin_new_pwd.strip():
-                    c.execute("UPDATE users SET password = ? WHERE username = ?", (admin_new_pwd.strip(), target_user))
-                    conn.commit()
-                    st.success(f"✅ Password for {target_user.capitalize()} reset to: {admin_new_pwd.strip()}")
+            if not user_idx.empty:
+                curr_pwd = str(df_users.loc[user_idx[0], 'password'])
+                if old_p != curr_pwd:
+                    st.error("Current password is incorrect.")
+                elif not new_p.strip():
+                    st.error("New password cannot be empty.")
+                elif new_p != conf_p:
+                    st.error("New passwords do not match.")
                 else:
-                    st.error("Password cannot be empty.")
-
-if st.sidebar.button("🚪 Logout"):
-    logout()
-st.sidebar.markdown("---")
+                    df_users.loc[user_idx[0], 'password'] = new_p.strip()
+                    update_sheet_data("users", df_users)
+                    st.success("✅ Password updated in Google Sheet!")
 
 if is_admin:
     menu = ["Daily Entry", "Daily Stock Register", "Reports & Analytics", "Capital Management"]
@@ -221,6 +115,10 @@ else:
     menu = ["Reports & Analytics", "Daily Stock Register", "Capital Management"]
 
 choice = st.sidebar.selectbox("Select Menu", menu)
+
+if st.sidebar.button("🚪 Logout"):
+    logout()
+st.sidebar.markdown("---")
 
 PARTNERS_LIST = ["Abhijit", "Jit", "Debasis", "Sumit"]
 EXPENSE_CATEGORIES = [
@@ -243,7 +141,7 @@ def parse_db_date(val):
     if isinstance(val, date):
         return val
     try:
-        return datetime.strptime(str(val), "%Y-%m-%d").date()
+        return datetime.strptime(str(val)[:10], "%Y-%m-%d").date()
     except Exception:
         return date.today()
 
@@ -252,7 +150,7 @@ def parse_db_date(val):
 # -------------------------------------------------------------
 if choice == "Daily Entry":
     if not is_admin:
-        st.warning("⚠️ You have Read-Only access. You cannot add or modify entries.")
+        st.warning("⚠️ You have Read-Only access.")
         st.stop()
 
     st.subheader("📝 Daily Sales & Expense Entry")
@@ -263,17 +161,26 @@ if choice == "Daily Entry":
         with st.form("sale_form", clear_on_submit=True):
             s_date = st.date_input("Date", value=date.today(), key="s_date")
             counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
-            product = st.text_input("Product Name (e.g. Chicken Pakoda, Gile-Mete, Cigarette)")
+            product = st.text_input("Product Name (e.g. Total Sale, Chicken Pakoda, Water)")
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
             amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=0.0, step=10.0)
             
-            submit_sale = st.form_submit_button("Save Sale Record")
+            submit_sale = st.form_submit_button("Save Sale to Google Sheets")
             if submit_sale:
                 if product.strip():
-                    c.execute("INSERT INTO sales (entry_date, product_name, quantity, amount, counter_type) VALUES (?, ?, ?, ?, ?)",
-                              (s_date, product.strip(), quantity, amount, counter))
-                    conn.commit()
-                    st.success("✅ Sale record saved successfully!")
+                    df_sales = get_sheet_data("sales", SALES_COLS)
+                    new_id = 1 if df_sales.empty else int(pd.to_numeric(df_sales['id'], errors='coerce').max() + 1)
+                    new_row = pd.DataFrame([{
+                        "id": new_id,
+                        "entry_date": str(s_date),
+                        "counter_type": counter,
+                        "product_name": product.strip(),
+                        "quantity": quantity,
+                        "amount": amount
+                    }])
+                    df_sales = pd.concat([df_sales, new_row], ignore_index=True)
+                    update_sheet_data("sales", df_sales)
+                    st.success("✅ Sale record saved permanently to Google Sheets!")
                     st.rerun()
                 else:
                     st.error("Please enter a valid product name.")
@@ -283,16 +190,24 @@ if choice == "Daily Entry":
         with st.form("expense_form", clear_on_submit=True):
             e_date = st.date_input("Date", value=date.today(), key="e_date")
             category = st.selectbox("Expense Category", EXPENSE_CATEGORIES)
-            particulars = st.text_input("Particulars / Details (e.g. 5kg Chicken, Mustard Oil, Gas Cylinder)")
+            particulars = st.text_input("Particulars / Details (e.g. Chicken, Grocery, Gas)")
             e_amount = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=0.0, step=10.0)
             
-            submit_exp = st.form_submit_button("Save Expense Record")
+            submit_exp = st.form_submit_button("Save Expense to Google Sheets")
             if submit_exp:
                 if particulars.strip():
-                    c.execute("INSERT INTO expenses (entry_date, particulars, category, amount) VALUES (?, ?, ?, ?)",
-                              (e_date, particulars.strip(), category, e_amount))
-                    conn.commit()
-                    st.success("✅ Expense record saved successfully!")
+                    df_exp = get_sheet_data("expenses", EXPENSES_COLS)
+                    new_id = 1 if df_exp.empty else int(pd.to_numeric(df_exp['id'], errors='coerce').max() + 1)
+                    new_row = pd.DataFrame([{
+                        "id": new_id,
+                        "entry_date": str(e_date),
+                        "category": category,
+                        "particulars": particulars.strip(),
+                        "amount": e_amount
+                    }])
+                    df_exp = pd.concat([df_exp, new_row], ignore_index=True)
+                    update_sheet_data("expenses", df_exp)
+                    st.success("✅ Expense record saved permanently to Google Sheets!")
                     st.rerun()
                 else:
                     st.error("Please enter particulars details.")
@@ -302,7 +217,7 @@ if choice == "Daily Entry":
 # -------------------------------------------------------------
 elif choice == "Daily Stock Register":
     st.subheader("📦 Daily Stock & Automated Sales Tracker")
-    st.caption("Track stock movement: Daily Sold = (Opening + Added) - Closing")
+    st.caption("Auto-synced with Google Sheets")
     
     col_st1, col_st2 = st.columns([1.1, 1.9]) if is_admin else (None, st.container())
     
@@ -313,94 +228,109 @@ elif choice == "Daily Stock Register":
                 stk_date = st.date_input("Date", value=date.today(), key="stk_date")
                 stk_item = st.selectbox("Select Item", TRACKED_ITEMS)
                 op_stock = st.number_input("Opening Stock (Pcs)", min_value=0, value=0, step=1)
-                add_stock = st.number_input("Stock Added / Purchased Today (Pcs)", min_value=0, value=0, step=1)
-                cl_stock = st.number_input("Closing Stock at End of Day (Pcs)", min_value=0, value=0, step=1)
+                add_stock = st.number_input("Stock Added / Purchased (Pcs)", min_value=0, value=0, step=1)
+                cl_stock = st.number_input("Closing Stock (Pcs)", min_value=0, value=0, step=1)
                 
                 total_available = op_stock + add_stock
                 calc_sold = max(0, total_available - cl_stock)
-                st.info(f"💡 Calculated Daily Sold: **{calc_sold} Pcs**")
+                st.info(f"💡 Daily Sold: **{calc_sold} Pcs**")
                 
                 submit_stock = st.form_submit_button("Save Stock Record")
                 if submit_stock:
                     if cl_stock > total_available:
-                        st.error(f"Closing stock cannot be greater than Total Available ({total_available})!")
+                        st.error(f"Closing stock cannot exceed Total Available ({total_available})!")
                     else:
-                        c.execute("""
-                            INSERT INTO inventory_log (entry_date, item_name, opening_stock, added_stock, closing_stock, sold_quantity)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (stk_date, stk_item, op_stock, add_stock, cl_stock, calc_sold))
-                        conn.commit()
+                        df_stk = get_sheet_data("inventory_log", INVENTORY_COLS)
+                        new_id = 1 if df_stk.empty else int(pd.to_numeric(df_stk['id'], errors='coerce').max() + 1)
+                        new_row = pd.DataFrame([{
+                            "id": new_id,
+                            "entry_date": str(stk_date),
+                            "item_name": stk_item,
+                            "opening_stock": op_stock,
+                            "added_stock": add_stock,
+                            "closing_stock": cl_stock,
+                            "sold_quantity": calc_sold
+                        }])
+                        df_stk = pd.concat([df_stk, new_row], ignore_index=True)
+                        update_sheet_data("inventory_log", df_stk)
                         st.success(f"✅ Stock record saved! ({calc_sold} pcs sold)")
                         st.rerun()
 
     with (col_st2 if is_admin else col_st2):
-        st.markdown("### 📋 Daily Stock & Sales Register")
+        st.markdown("### 📋 Stock & Sales History")
         f_col1, f_col2 = st.columns(2)
         with f_col1:
             stk_start = st.date_input("From Date", value=date(2026, 8, 1), key="stk_start")
         with f_col2:
             stk_end = st.date_input("To Date", value=date.today(), key="stk_end")
             
-        df_stock = pd.read_sql_query("""
-            SELECT id as ID, entry_date as Date, item_name as Item, 
-                   opening_stock as "Opening", added_stock as "Added", 
-                   closing_stock as "Closing", sold_quantity as "Sold (Pcs)"
-            FROM inventory_log
-            WHERE entry_date BETWEEN ? AND ?
-            ORDER BY entry_date DESC, id DESC
-        """, conn, params=(stk_start, stk_end))
-        
+        df_stock = get_sheet_data("inventory_log", INVENTORY_COLS)
         if not df_stock.empty:
-            st.dataframe(df_stock, use_container_width=True)
-            st.markdown("#### 📊 Total Quantity Sold in Selected Period")
-            sold_sum = df_stock.groupby('Item')['Sold (Pcs)'].sum().reset_index()
-            st.dataframe(sold_sum, use_container_width=True)
+            df_stock['entry_date_parsed'] = pd.to_datetime(df_stock['entry_date'], errors='coerce').dt.date
+            df_stock_filtered = df_stock[(df_stock['entry_date_parsed'] >= stk_start) & (df_stock['entry_date_parsed'] <= stk_end)].copy()
+            df_stock_filtered = df_stock_filtered.sort_values(by=['entry_date', 'id'], ascending=[False, False])
             
-            if is_admin:
-                st.markdown("---")
-                act_col1, act_col2 = st.columns(2)
-                with act_col1:
-                    st.markdown("##### ✏️ Edit Stock Entry")
-                    edit_stock_id = st.selectbox("Select Stock ID to Edit", df_stock['ID'].tolist(), key="edit_stk_sel")
-                    row_stk = df_stock[df_stock['ID'] == edit_stock_id].iloc[0]
-                    
-                    with st.form("edit_stock_form"):
-                        e_stk_date = st.date_input("Date", value=parse_db_date(row_stk['Date']), key="e_stk_d")
-                        current_item_val = row_stk['Item'] if row_stk['Item'] in TRACKED_ITEMS else TRACKED_ITEMS[0]
-                        e_stk_item = st.selectbox("Item", TRACKED_ITEMS, index=TRACKED_ITEMS.index(current_item_val), key="e_stk_i")
-                        e_op = st.number_input("Opening Stock", min_value=0, value=int(row_stk['Opening']), step=1, key="e_stk_op")
-                        e_add = st.number_input("Added Stock", min_value=0, value=int(row_stk['Added']), step=1, key="e_stk_add")
-                        e_cl = st.number_input("Closing Stock", min_value=0, value=int(row_stk['Closing']), step=1, key="e_stk_cl")
+            if not df_stock_filtered.empty:
+                display_cols = {
+                    'id': 'ID', 'entry_date': 'Date', 'item_name': 'Item',
+                    'opening_stock': 'Opening', 'added_stock': 'Added',
+                    'closing_stock': 'Closing', 'sold_quantity': 'Sold (Pcs)'
+                }
+                st.dataframe(df_stock_filtered[list(display_cols.keys())].rename(columns=display_cols), use_container_width=True)
+                
+                st.markdown("#### 📊 Total Quantity Sold in Period")
+                df_stock_filtered['sold_quantity'] = pd.to_numeric(df_stock_filtered['sold_quantity'], errors='coerce').fillna(0)
+                sold_sum = df_stock_filtered.groupby('item_name')['sold_quantity'].sum().reset_index()
+                st.dataframe(sold_sum.rename(columns={'item_name': 'Item', 'sold_quantity': 'Total Sold (Pcs)'}), use_container_width=True)
+                
+                if is_admin:
+                    st.markdown("---")
+                    act_col1, act_col2 = st.columns(2)
+                    with act_col1:
+                        st.markdown("##### ✏️ Edit Stock Entry")
+                        edit_stock_id = st.selectbox("Select Stock ID to Edit", df_stock_filtered['id'].tolist(), key="edit_stk_sel")
+                        row_stk = df_stock[df_stock['id'] == edit_stock_id].iloc[0]
                         
-                        e_tot = e_op + e_add
-                        e_sold = max(0, e_tot - e_cl)
-                        
-                        if st.form_submit_button("Update Stock Record"):
-                            c.execute("""
-                                UPDATE inventory_log 
-                                SET entry_date = ?, item_name = ?, opening_stock = ?, added_stock = ?, closing_stock = ?, sold_quantity = ?
-                                WHERE id = ?
-                            """, (e_stk_date, e_stk_item, e_op, e_add, e_cl, e_sold, edit_stock_id))
-                            conn.commit()
-                            st.success("✅ Stock Record updated successfully!")
-                            st.rerun()
+                        with st.form("edit_stock_form"):
+                            e_stk_date = st.date_input("Date", value=parse_db_date(row_stk['entry_date']), key="e_stk_d")
+                            current_item_val = row_stk['item_name'] if row_stk['item_name'] in TRACKED_ITEMS else TRACKED_ITEMS[0]
+                            e_stk_item = st.selectbox("Item", TRACKED_ITEMS, index=TRACKED_ITEMS.index(current_item_val), key="e_stk_i")
+                            e_op = st.number_input("Opening Stock", min_value=0, value=int(row_stk['opening_stock']), step=1)
+                            e_add = st.number_input("Added Stock", min_value=0, value=int(row_stk['added_stock']), step=1)
+                            e_cl = st.number_input("Closing Stock", min_value=0, value=int(row_stk['closing_stock']), step=1)
+                            
+                            e_tot = e_op + e_add
+                            e_sold = max(0, e_tot - e_cl)
+                            
+                            if st.form_submit_button("Update Stock Record"):
+                                idx = df_stock[df_stock['id'] == edit_stock_id].index[0]
+                                df_stock.loc[idx, ['entry_date', 'item_name', 'opening_stock', 'added_stock', 'closing_stock', 'sold_quantity']] = [
+                                    str(e_stk_date), e_stk_item, e_op, e_add, e_cl, e_sold
+                                ]
+                                df_stock_to_save = df_stock.drop(columns=['entry_date_parsed'], errors='ignore')
+                                update_sheet_data("inventory_log", df_stock_to_save)
+                                st.success("✅ Stock Record updated in Google Sheets!")
+                                st.rerun()
 
-                with act_col2:
-                    st.markdown("##### 🗑️ Delete Stock Entry")
-                    del_stock_id = st.selectbox("Select Stock ID to Delete", df_stock['ID'].tolist(), key="del_stk_sel")
-                    if st.button("Delete Stock Record", type="primary", key="btn_del_stk"):
-                        c.execute("DELETE FROM inventory_log WHERE id = ?", (del_stock_id,))
-                        conn.commit()
-                        st.success("Stock Record deleted successfully!")
-                        st.rerun()
+                    with act_col2:
+                        st.markdown("##### 🗑️ Delete Stock Entry")
+                        del_stock_id = st.selectbox("Select Stock ID to Delete", df_stock_filtered['id'].tolist(), key="del_stk_sel")
+                        if st.button("Delete Stock Record", type="primary"):
+                            df_stock = df_stock[df_stock['id'] != del_stock_id]
+                            df_stock_to_save = df_stock.drop(columns=['entry_date_parsed'], errors='ignore')
+                            update_sheet_data("inventory_log", df_stock_to_save)
+                            st.success("Stock Record deleted from Google Sheets!")
+                            st.rerun()
+            else:
+                st.info("No stock records found for this period.")
         else:
-            st.info("No stock records found for the selected period.")
+            st.info("No stock records found in Google Sheet.")
 
 # -------------------------------------------------------------
-# 3. Reports & Analytics Section (with Excel Export)
+# 3. Reports & Analytics Section
 # -------------------------------------------------------------
 elif choice == "Reports & Analytics":
-    st.subheader("📊 Business Summary & Profit / Loss Statement")
+    st.subheader("📊 Profit & Loss Summary & Excel Export")
     
     col_d1, col_d2 = st.columns(2)
     with col_d1:
@@ -409,13 +339,27 @@ elif choice == "Reports & Analytics":
         end_date = st.date_input("End Date", value=date.today())
         
     if start_date <= end_date:
-        df_sales = pd.read_sql_query("SELECT id as ID, entry_date as Date, counter_type as Counter, product_name as Product, quantity as Qty, amount as Amount FROM sales WHERE entry_date BETWEEN ? AND ?", conn, params=(start_date, end_date))
-        df_exp = pd.read_sql_query("SELECT id as ID, entry_date as Date, category as Category, particulars as Particulars, amount as Amount FROM expenses WHERE entry_date BETWEEN ? AND ?", conn, params=(start_date, end_date))
-        df_stock_exp = pd.read_sql_query("SELECT entry_date as Date, item_name as Item, opening_stock as Opening, added_stock as Added, closing_stock as Closing, sold_quantity as Sold_Qty FROM inventory_log WHERE entry_date BETWEEN ? AND ?", conn, params=(start_date, end_date))
-        df_cap_exp = pd.read_sql_query("SELECT entry_date as Date, partner_name as Partner, amount as Amount FROM capital ORDER BY entry_date DESC", conn)
+        df_sales_raw = get_sheet_data("sales", SALES_COLS)
+        df_exp_raw = get_sheet_data("expenses", EXPENSES_COLS)
+        df_stock_raw = get_sheet_data("inventory_log", INVENTORY_COLS)
+        df_cap_raw = get_sheet_data("capital", CAPITAL_COLS)
 
-        total_sale = df_sales['Amount'].sum() if not df_sales.empty else 0.0
-        total_exp = df_exp['Amount'].sum() if not df_exp.empty else 0.0
+        if not df_sales_raw.empty:
+            df_sales_raw['amount'] = pd.to_numeric(df_sales_raw['amount'], errors='coerce').fillna(0.0)
+            df_sales_raw['date_parsed'] = pd.to_datetime(df_sales_raw['entry_date'], errors='coerce').dt.date
+            df_sales = df_sales_raw[(df_sales_raw['date_parsed'] >= start_date) & (df_sales_raw['date_parsed'] <= end_date)].copy()
+        else:
+            df_sales = pd.DataFrame(columns=SALES_COLS)
+
+        if not df_exp_raw.empty:
+            df_exp_raw['amount'] = pd.to_numeric(df_exp_raw['amount'], errors='coerce').fillna(0.0)
+            df_exp_raw['date_parsed'] = pd.to_datetime(df_exp_raw['entry_date'], errors='coerce').dt.date
+            df_exp = df_exp_raw[(df_exp_raw['date_parsed'] >= start_date) & (df_exp_raw['date_parsed'] <= end_date)].copy()
+        else:
+            df_exp = pd.DataFrame(columns=EXPENSES_COLS)
+
+        total_sale = df_sales['amount'].sum() if not df_sales.empty else 0.0
+        total_exp = df_exp['amount'].sum() if not df_exp.empty else 0.0
         net_profit = total_sale - total_exp
         
         # Excel Generator
@@ -426,10 +370,10 @@ elif choice == "Reports & Analytics":
                 "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit]
             })
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
-            df_sales.to_excel(writer, sheet_name='Sales Register', index=False)
-            df_exp.to_excel(writer, sheet_name='Expense Register', index=False)
-            df_stock_exp.to_excel(writer, sheet_name='Stock Register', index=False)
-            df_cap_exp.to_excel(writer, sheet_name='Capital Register', index=False)
+            df_sales.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Sales Register', index=False)
+            df_exp.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Expense Register', index=False)
+            df_stock_raw.to_excel(writer, sheet_name='Stock Register', index=False)
+            df_cap_raw.to_excel(writer, sheet_name='Capital Register', index=False)
 
         st.download_button(
             label="📥 Download Full Account Book (.xlsx)",
@@ -477,100 +421,92 @@ elif choice == "Reports & Analytics":
         
         with tab1:
             if not df_sales.empty:
-                prod_summary = df_sales.groupby('Product').agg({'Qty': 'sum', 'Amount': 'sum'}).reset_index()
-                prod_summary_disp = prod_summary.copy()
-                prod_summary_disp['Amount'] = prod_summary_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(prod_summary_disp, use_container_width=True)
-                
-                st.markdown("#### Detailed Sales Register")
                 df_sales_disp = df_sales.copy()
-                df_sales_disp['Amount'] = df_sales_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(df_sales_disp, use_container_width=True)
+                df_sales_disp['amount_fmt'] = df_sales_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+                st.dataframe(df_sales_disp[['id', 'entry_date', 'counter_type', 'product_name', 'quantity', 'amount_fmt']].rename(
+                    columns={'id': 'ID', 'entry_date': 'Date', 'counter_type': 'Counter', 'product_name': 'Product', 'quantity': 'Qty', 'amount_fmt': 'Amount'}
+                ), use_container_width=True)
                 
                 if is_admin:
                     st.markdown("---")
                     s_act1, s_act2 = st.columns(2)
                     with s_act1:
                         st.markdown("##### ✏️ Edit Sale Entry")
-                        edit_sale_id = st.selectbox("Select Sale ID to Edit", df_sales['ID'].tolist(), key="edit_s_sel")
-                        row_s = df_sales[df_sales['ID'] == edit_sale_id].iloc[0]
+                        edit_sale_id = st.selectbox("Select Sale ID to Edit", df_sales['id'].tolist(), key="edit_s_sel")
+                        row_s = df_sales_raw[df_sales_raw['id'] == edit_sale_id].iloc[0]
                         
                         with st.form("edit_sale_form"):
-                            es_date = st.date_input("Date", value=parse_db_date(row_s['Date']), key="es_d")
+                            es_date = st.date_input("Date", value=parse_db_date(row_s['entry_date']), key="es_d")
                             counters = ["Inside Counter / Dining", "Outside Stall"]
-                            es_c_idx = counters.index(row_s['Counter']) if row_s['Counter'] in counters else 0
+                            es_c_idx = counters.index(row_s['counter_type']) if row_s['counter_type'] in counters else 0
                             es_counter = st.selectbox("Counter", counters, index=es_c_idx, key="es_c")
-                            es_prod = st.text_input("Product Name", value=str(row_s['Product']), key="es_p")
-                            es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['Qty']), step=1, key="es_q")
-                            es_amt = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=float(row_s['Amount']), step=10.0, key="es_a")
+                            es_prod = st.text_input("Product Name", value=str(row_s['product_name']), key="es_p")
+                            es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['quantity']), step=1, key="es_q")
+                            es_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_s['amount']), step=10.0, key="es_a")
                             
                             if st.form_submit_button("Update Sale Record"):
-                                if es_prod.strip():
-                                    c.execute("""
-                                        UPDATE sales 
-                                        SET entry_date = ?, counter_type = ?, product_name = ?, quantity = ?, amount = ?
-                                        WHERE id = ?
-                                    """, (es_date, es_counter, es_prod.strip(), es_qty, es_amt, edit_sale_id))
-                                    conn.commit()
-                                    st.success("✅ Sale Record updated successfully!")
-                                    st.rerun()
-                                    
+                                idx = df_sales_raw[df_sales_raw['id'] == edit_sale_id].index[0]
+                                df_sales_raw.loc[idx, ['entry_date', 'counter_type', 'product_name', 'quantity', 'amount']] = [
+                                    str(es_date), es_counter, es_prod.strip(), es_qty, es_amt
+                                ]
+                                df_to_save = df_sales_raw.drop(columns=['date_parsed'], errors='ignore')
+                                update_sheet_data("sales", df_to_save)
+                                st.success("✅ Sale Record updated in Google Sheets!")
+                                st.rerun()
+                                
                     with s_act2:
                         st.markdown("##### 🗑️ Delete Sale Entry")
-                        del_sale_id = st.selectbox("Select Sale ID to Delete", df_sales['ID'].tolist(), key="del_s_sel")
+                        del_sale_id = st.selectbox("Select Sale ID to Delete", df_sales['id'].tolist(), key="del_s_sel")
                         if st.button("Delete Sale Record", type="primary", key="btn_del_sale"):
-                            c.execute("DELETE FROM sales WHERE id = ?", (del_sale_id,))
-                            conn.commit()
-                            st.success("Sale record deleted successfully!")
+                            df_sales_raw = df_sales_raw[df_sales_raw['id'] != del_sale_id]
+                            df_to_save = df_sales_raw.drop(columns=['date_parsed'], errors='ignore')
+                            update_sheet_data("sales", df_to_save)
+                            st.success("Sale record deleted from Google Sheets!")
                             st.rerun()
             else:
                 st.info("No sales records found for this period.")
                 
         with tab2:
             if not df_exp.empty:
-                cat_summary = df_exp.groupby('Category').agg({'Amount': 'sum'}).reset_index()
-                cat_summary_disp = cat_summary.copy()
-                cat_summary_disp['Amount'] = cat_summary_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(cat_summary_disp, use_container_width=True)
-                
-                st.markdown("#### Detailed Expense Register")
                 df_exp_disp = df_exp.copy()
-                df_exp_disp['Amount'] = df_exp_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(df_exp_disp, use_container_width=True)
+                df_exp_disp['amount_fmt'] = df_exp_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+                st.dataframe(df_exp_disp[['id', 'entry_date', 'category', 'particulars', 'amount_fmt']].rename(
+                    columns={'id': 'ID', 'entry_date': 'Date', 'category': 'Category', 'particulars': 'Particulars', 'amount_fmt': 'Amount'}
+                ), use_container_width=True)
                 
                 if is_admin:
                     st.markdown("---")
                     e_act1, e_act2 = st.columns(2)
                     with e_act1:
                         st.markdown("##### ✏️ Edit Expense Entry")
-                        edit_exp_id = st.selectbox("Select Expense ID to Edit", df_exp['ID'].tolist(), key="edit_e_sel")
-                        row_e = df_exp[df_exp['ID'] == edit_exp_id].iloc[0]
+                        edit_exp_id = st.selectbox("Select Expense ID to Edit", df_exp['id'].tolist(), key="edit_e_sel")
+                        row_e = df_exp_raw[df_exp_raw['id'] == edit_exp_id].iloc[0]
                         
                         with st.form("edit_expense_form"):
-                            ee_date = st.date_input("Date", value=parse_db_date(row_e['Date']), key="ee_d")
-                            ee_cat_idx = EXPENSE_CATEGORIES.index(row_e['Category']) if row_e['Category'] in EXPENSE_CATEGORIES else 0
+                            ee_date = st.date_input("Date", value=parse_db_date(row_e['entry_date']), key="ee_d")
+                            ee_cat_idx = EXPENSE_CATEGORIES.index(row_e['category']) if row_e['category'] in EXPENSE_CATEGORIES else 0
                             ee_cat = st.selectbox("Expense Category", EXPENSE_CATEGORIES, index=ee_cat_idx, key="ee_c")
-                            ee_part = st.text_input("Particulars / Details", value=str(row_e['Particulars']), key="ee_p")
-                            ee_amt = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=float(row_e['Amount']), step=10.0, key="ee_a")
+                            ee_part = st.text_input("Particulars / Details", value=str(row_e['particulars']), key="ee_p")
+                            ee_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_e['amount']), step=10.0, key="ee_a")
                             
                             if st.form_submit_button("Update Expense Record"):
-                                if ee_part.strip():
-                                    c.execute("""
-                                        UPDATE expenses 
-                                        SET entry_date = ?, category = ?, particulars = ?, amount = ?
-                                        WHERE id = ?
-                                    """, (ee_date, ee_cat, ee_part.strip(), ee_amt, edit_exp_id))
-                                    conn.commit()
-                                    st.success("✅ Expense Record updated successfully!")
-                                    st.rerun()
-                                    
+                                idx = df_exp_raw[df_exp_raw['id'] == edit_exp_id].index[0]
+                                df_exp_raw.loc[idx, ['entry_date', 'category', 'particulars', 'amount']] = [
+                                    str(ee_date), ee_cat, ee_part.strip(), ee_amt
+                                ]
+                                df_to_save = df_exp_raw.drop(columns=['date_parsed'], errors='ignore')
+                                update_sheet_data("expenses", df_to_save)
+                                st.success("✅ Expense Record updated in Google Sheets!")
+                                st.rerun()
+                                
                     with e_act2:
                         st.markdown("##### 🗑️ Delete Expense Entry")
-                        del_exp_id = st.selectbox("Select Expense ID to Delete", df_exp['ID'].tolist(), key="del_e_sel")
+                        del_exp_id = st.selectbox("Select Expense ID to Delete", df_exp['id'].tolist(), key="del_e_sel")
                         if st.button("Delete Expense Record", type="primary", key="btn_del_exp"):
-                            c.execute("DELETE FROM expenses WHERE id = ?", (del_exp_id,))
-                            conn.commit()
-                            st.success("Expense record deleted successfully!")
+                            df_exp_raw = df_exp_raw[df_exp_raw['id'] != del_exp_id]
+                            df_to_save = df_exp_raw.drop(columns=['date_parsed'], errors='ignore')
+                            update_sheet_data("expenses", df_to_save)
+                            st.success("Expense record deleted from Google Sheets!")
                             st.rerun()
             else:
                 st.info("No expense records found for this period.")
@@ -594,61 +530,71 @@ elif choice == "Capital Management":
                 cap_amount = st.number_input("Amount (Rs.)", min_value=0.0, value=0.0, step=500.0)
                 
                 if st.form_submit_button("Record Capital"):
-                    c.execute("INSERT INTO capital (entry_date, partner_name, amount) VALUES (?, ?, ?)",
-                              (c_date, partner, cap_amount))
-                    conn.commit()
-                    st.success(f"✅ Capital record for {partner} saved successfully!")
+                    df_cap = get_sheet_data("capital", CAPITAL_COLS)
+                    new_id = 1 if df_cap.empty else int(pd.to_numeric(df_cap['id'], errors='coerce').max() + 1)
+                    new_row = pd.DataFrame([{
+                        "id": new_id,
+                        "entry_date": str(c_date),
+                        "partner_name": partner,
+                        "amount": cap_amount
+                    }])
+                    df_cap = pd.concat([df_cap, new_row], ignore_index=True)
+                    update_sheet_data("capital", df_cap)
+                    st.success(f"✅ Capital for {partner} saved to Google Sheets!")
                     st.rerun()
                     
     with (col_c2 if is_admin else col_c2):
         st.markdown("### Current Capital Summary")
-        df_cap = pd.read_sql_query("SELECT partner_name as Partner, SUM(amount) as Total_Capital FROM capital GROUP BY partner_name", conn)
-        df_cap_all = pd.read_sql_query("SELECT id as ID, entry_date as Date, partner_name as Partner, amount as Amount FROM capital ORDER BY entry_date DESC", conn)
+        df_cap = get_sheet_data("capital", CAPITAL_COLS)
         
         if not df_cap.empty:
-            total_invested = df_cap['Total_Capital'].sum()
-            df_cap_disp = df_cap.copy()
-            df_cap_disp['Total_Capital'] = df_cap_disp['Total_Capital'].apply(lambda x: f"Rs. {x:,.2f}")
-            st.dataframe(df_cap_disp, use_container_width=True)
+            df_cap['amount'] = pd.to_numeric(df_cap['amount'], errors='coerce').fillna(0.0)
+            summary_cap = df_cap.groupby('partner_name')['amount'].sum().reset_index()
+            total_invested = summary_cap['amount'].sum()
+            
+            summary_cap_disp = summary_cap.copy()
+            summary_cap_disp['amount'] = summary_cap_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+            st.dataframe(summary_cap_disp.rename(columns={'partner_name': 'Partner', 'amount': 'Total Capital'}), use_container_width=True)
             
             st.info(f"**Total Capital Invested:** Rs. {total_invested:,.2f}")
             
             st.markdown("#### Capital Contribution History")
-            df_cap_all_disp = df_cap_all.copy()
-            df_cap_all_disp['Amount'] = df_cap_all_disp['Amount'].apply(lambda x: f"Rs. {x:,.2f}")
-            st.dataframe(df_cap_all_disp, use_container_width=True)
+            df_cap_disp = df_cap.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
+            df_cap_disp['amount'] = df_cap_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+            st.dataframe(df_cap_disp[['id', 'entry_date', 'partner_name', 'amount']].rename(
+                columns={'id': 'ID', 'entry_date': 'Date', 'partner_name': 'Partner', 'amount': 'Amount'}
+            ), use_container_width=True)
             
             if is_admin:
                 st.markdown("---")
                 cap_act1, cap_act2 = st.columns(2)
                 with cap_act1:
                     st.markdown("##### ✏️ Edit Capital Entry")
-                    edit_cap_id = st.selectbox("Select Capital ID to Edit", df_cap_all['ID'].tolist(), key="edit_cap_sel")
-                    row_cap = df_cap_all[df_cap_all['ID'] == edit_cap_id].iloc[0]
+                    edit_cap_id = st.selectbox("Select Capital ID to Edit", df_cap['id'].tolist(), key="edit_cap_sel")
+                    row_cap = df_cap[df_cap['id'] == edit_cap_id].iloc[0]
                     
                     with st.form("edit_cap_form"):
-                        ec_date = st.date_input("Date", value=parse_db_date(row_cap['Date']), key="ec_d")
-                        ec_p_idx = PARTNERS_LIST.index(row_cap['Partner']) if row_cap['Partner'] in PARTNERS_LIST else 0
+                        ec_date = st.date_input("Date", value=parse_db_date(row_cap['entry_date']), key="ec_d")
+                        ec_p_idx = PARTNERS_LIST.index(row_cap['partner_name']) if row_cap['partner_name'] in PARTNERS_LIST else 0
                         ec_partner = st.selectbox("Partner Name", PARTNERS_LIST, index=ec_p_idx, key="ec_p")
-                        ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['Amount']), step=500.0, key="ec_a")
+                        ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['amount']), step=500.0, key="ec_a")
                         
                         if st.form_submit_button("Update Capital Record"):
-                            c.execute("""
-                                UPDATE capital 
-                                SET entry_date = ?, partner_name = ?, amount = ?
-                                WHERE id = ?
-                            """, (ec_date, ec_partner, ec_amt, edit_cap_id))
-                            conn.commit()
-                            st.success("✅ Capital Record updated successfully!")
+                            idx = df_cap[df_cap['id'] == edit_cap_id].index[0]
+                            df_cap.loc[idx, ['entry_date', 'partner_name', 'amount']] = [
+                                str(ec_date), ec_partner, ec_amt
+                            ]
+                            update_sheet_data("capital", df_cap)
+                            st.success("✅ Capital Record updated in Google Sheets!")
                             st.rerun()
                             
                 with cap_act2:
                     st.markdown("##### 🗑️ Delete Capital Entry")
-                    del_id = st.selectbox("Select Capital ID to Delete", df_cap_all['ID'].tolist(), key="del_cap_sel")
+                    del_id = st.selectbox("Select Capital ID to Delete", df_cap['id'].tolist(), key="del_cap_sel")
                     if st.button("Delete Capital Record", type="primary", key="btn_del_cap"):
-                        c.execute("DELETE FROM capital WHERE id = ?", (del_id,))
-                        conn.commit()
-                        st.success("Capital Record deleted successfully!")
+                        df_cap = df_cap[df_cap['id'] != del_id]
+                        update_sheet_data("capital", df_cap)
+                        st.success("Capital Record deleted from Google Sheets!")
                         st.rerun()
         else:
-            st.info("No capital contributions recorded yet.")
+            st.info("No capital contributions found in Google Sheet.")
