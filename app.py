@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import time
 from datetime import date, datetime
 from streamlit_gsheets import GSheetsConnection
 
@@ -29,12 +30,14 @@ def update_sheet_data(worksheet_name, df):
     df_clean = df.copy()
     conn.update(worksheet=worksheet_name, data=df_clean)
 
-# Default Schemas with created_by tracking
-USERS_COLS = ["username", "password", "role"]
+# Default Schemas
+USERS_COLS = ["username", "password", "role", "last_seen"]
 SALES_COLS = ["id", "entry_date", "counter_type", "product_name", "quantity", "amount", "created_by"]
 EXPENSES_COLS = ["id", "entry_date", "category", "particulars", "amount", "created_by"]
 CAPITAL_COLS = ["id", "entry_date", "partner_name", "amount", "created_by"]
 INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock", "closing_stock", "sold_quantity", "created_by"]
+
+ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
 
 # -------------------------------------------------------------
 # Authentication Flow
@@ -43,6 +46,18 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
+
+def update_user_heartbeat(username):
+    try:
+        df_u = get_sheet_data("users", USERS_COLS)
+        df_u['username_clean'] = df_u['username'].astype(str).str.strip().str.lower()
+        idx = df_u[df_u['username_clean'] == username.lower()].index
+        if not idx.empty:
+            df_u.loc[idx[0], 'last_seen'] = int(time.time())
+            save_cols = [c for c in USERS_COLS if c in df_u.columns]
+            update_sheet_data("users", df_u[save_cols])
+    except Exception:
+        pass
 
 def login():
     st.markdown("### 🔐 Restaurant Management Login")
@@ -64,12 +79,23 @@ def login():
                 st.session_state.logged_in = True
                 st.session_state.username = user
                 st.session_state.role = str(user_row.iloc[0]['role']).strip().lower()
+                update_user_heartbeat(user)
                 st.success("Login successful!")
                 st.rerun()
             else:
                 st.error("Invalid Username or Password. Please try again.")
 
 def logout():
+    try:
+        df_u = get_sheet_data("users", USERS_COLS)
+        df_u['username_clean'] = df_u['username'].astype(str).str.strip().str.lower()
+        idx = df_u[df_u['username_clean'] == st.session_state.username.lower()].index
+        if not idx.empty:
+            df_u.loc[idx[0], 'last_seen'] = 0
+            save_cols = [c for c in USERS_COLS if c in df_u.columns]
+            update_sheet_data("users", df_u[save_cols])
+    except Exception:
+        pass
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
@@ -163,6 +189,50 @@ def confirm_delete_cap_dialog(del_id):
 # Main Application UI
 # -------------------------------------------------------------
 st.title("🍽️ Restaurant & Counter - Cloud Accounts Ledger")
+
+# Online/Offline Live Status Bar (Active within last 5 minutes)
+now_ts = int(time.time())
+df_u_status = get_sheet_data("users", USERS_COLS)
+online_users = []
+offline_users = []
+
+for partner in ALL_PARTNERS:
+    # Match partner username
+    matched_row = df_u_status[df_u_status['username'].astype(str).str.strip().str.lower() == partner.lower()]
+    if not matched_row.empty:
+        try:
+            last_ts = float(matched_row.iloc[0]['last_seen'])
+            if (now_ts - last_ts) < 300: # 5 minutes threshold
+                online_users.append(partner)
+            else:
+                offline_users.append(partner)
+        except Exception:
+            offline_users.append(partner)
+    else:
+        offline_users.append(partner)
+
+# Always keep current logged-in user in Online
+curr_name_cap = st.session_state.username.capitalize()
+if curr_name_cap in ALL_PARTNERS:
+    if curr_name_cap not in online_users:
+        online_users.append(curr_name_cap)
+    if curr_name_cap in offline_users:
+        offline_users.remove(curr_name_cap)
+
+online_html = " ".join([f"<span style='background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:12px; font-weight:600; margin-right:5px;'>🟢 {u}</span>" for u in online_users])
+offline_html = " ".join([f"<span style='background:#f1f5f9; color:#64748b; padding:3px 10px; border-radius:12px; font-weight:500; margin-right:5px;'>⚪ {u}</span>" for u in offline_users])
+
+st.markdown(f"""
+<div style="background-color:#ffffff; border:1px solid #e2e8f0; padding:10px 16px; border-radius:10px; margin-bottom:18px; display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
+    <div style="display:flex; align-items:center;">
+        <b style="color:#0f172a; margin-right:8px;">Online ({len(online_users)}):</b> {online_html if online_users else '<span style=\"color:#94a3b8;\">None</span>'}
+    </div>
+    <div style="color:#cbd5e1; margin:0 5px;">|</div>
+    <div style="display:flex; align-items:center;">
+        <b style="color:#64748b; margin-right:8px;">Offline ({len(offline_users)}):</b> {offline_html if offline_users else '<span style=\"color:#94a3b8;\">None</span>'}
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 role_badge = f"👑 Admin ({current_user_tag})" if is_admin else f"👁️ Viewer ({current_user_tag})"
 st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}** (`{current_user_tag}`)")
@@ -271,6 +341,7 @@ if choice == "📝 Daily Entry":
                     }])
                     df_sales = pd.concat([df_sales, new_row], ignore_index=True)
                     update_sheet_data("sales", df_sales)
+                    update_user_heartbeat(st.session_state.username)
                     st.success(f"✅ Sale of Rs. {final_amt:,.2f} recorded by {current_user_tag}!")
                     st.rerun()
                 else:
@@ -300,6 +371,7 @@ if choice == "📝 Daily Entry":
                     }])
                     df_exp = pd.concat([df_exp, new_row], ignore_index=True)
                     update_sheet_data("expenses", df_exp)
+                    update_user_heartbeat(st.session_state.username)
                     st.success(f"✅ Expense of Rs. {final_e_amt:,.2f} recorded by {current_user_tag}!")
                     st.rerun()
                 else:
@@ -347,6 +419,7 @@ elif choice == "📦 Daily Stock Register":
                         }])
                         df_stk = pd.concat([df_stk, new_row], ignore_index=True)
                         update_sheet_data("inventory_log", df_stk)
+                        update_user_heartbeat(st.session_state.username)
                         st.success(f"✅ Stock record saved by {current_user_tag}! ({calc_sold} pcs sold)")
                         st.rerun()
 
@@ -405,6 +478,7 @@ elif choice == "📦 Daily Stock Register":
                                 ]
                                 df_stock_to_save = df_stock.drop(columns=['entry_date_parsed'], errors='ignore')
                                 update_sheet_data("inventory_log", df_stock_to_save)
+                                update_user_heartbeat(st.session_state.username)
                                 st.success("✅ Stock Record updated in Google Sheets!")
                                 st.rerun()
 
@@ -545,6 +619,7 @@ elif choice == "📊 Reports & Analytics":
                                 ]
                                 df_to_save = df_sales_raw.drop(columns=['date_parsed'], errors='ignore')
                                 update_sheet_data("sales", df_to_save)
+                                update_user_heartbeat(st.session_state.username)
                                 st.success(f"✅ Sale Record updated by {current_user_tag} in Google Sheets!")
                                 st.rerun()
                                 
@@ -586,6 +661,7 @@ elif choice == "📊 Reports & Analytics":
                                 ]
                                 df_to_save = df_exp_raw.drop(columns=['date_parsed'], errors='ignore')
                                 update_sheet_data("expenses", df_to_save)
+                                update_user_heartbeat(st.session_state.username)
                                 st.success(f"✅ Expense Record updated by {current_user_tag} in Google Sheets!")
                                 st.rerun()
                                 
@@ -628,6 +704,7 @@ elif choice == "💼 Capital Management":
                     }])
                     df_cap = pd.concat([df_cap, new_row], ignore_index=True)
                     update_sheet_data("capital", df_cap)
+                    update_user_heartbeat(st.session_state.username)
                     st.success(f"✅ Capital of Rs. {final_cap_amt:,.2f} for {partner} saved by {current_user_tag}!")
                     st.rerun()
                     
@@ -674,6 +751,7 @@ elif choice == "💼 Capital Management":
                                 str(ec_date), ec_partner, float(ec_amt), current_user_tag
                             ]
                             update_sheet_data("capital", df_cap)
+                            update_user_heartbeat(st.session_state.username)
                             st.success(f"✅ Capital Record updated by {current_user_tag} in Google Sheets!")
                             st.rerun()
                             
