@@ -20,7 +20,7 @@ def get_sheet_data(worksheet_name, expected_cols):
         df = df.dropna(how='all')
         for col in expected_cols:
             if col not in df.columns:
-                df[col] = None
+                df[col] = "-"
         return df[expected_cols]
     except Exception:
         return pd.DataFrame(columns=expected_cols)
@@ -29,12 +29,12 @@ def update_sheet_data(worksheet_name, df):
     df_clean = df.copy()
     conn.update(worksheet=worksheet_name, data=df_clean)
 
-# Default Schemas
+# Default Schemas with created_by tracking
 USERS_COLS = ["username", "password", "role"]
-SALES_COLS = ["id", "entry_date", "counter_type", "product_name", "quantity", "amount"]
-EXPENSES_COLS = ["id", "entry_date", "category", "particulars", "amount"]
-CAPITAL_COLS = ["id", "entry_date", "partner_name", "amount"]
-INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock", "closing_stock", "sold_quantity"]
+SALES_COLS = ["id", "entry_date", "counter_type", "product_name", "quantity", "amount", "created_by"]
+EXPENSES_COLS = ["id", "entry_date", "category", "particulars", "amount", "created_by"]
+CAPITAL_COLS = ["id", "entry_date", "partner_name", "amount", "created_by"]
+INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock", "closing_stock", "sold_quantity", "created_by"]
 
 # -------------------------------------------------------------
 # Authentication Flow
@@ -80,6 +80,17 @@ if not st.session_state.logged_in:
     st.stop()
 
 is_admin = (st.session_state.role == "admin")
+
+# Get User Short Initials (AA for Abhijit, JB for Jit)
+def get_user_initials(uname):
+    u = str(uname).strip().lower()
+    if "abhijit" in u:
+        return "AA"
+    elif "jit" in u:
+        return "JB"
+    return u[:2].upper()
+
+current_user_tag = get_user_initials(st.session_state.username)
 
 # -------------------------------------------------------------
 # Delete Confirmation Dialogs (Modal Popup)
@@ -153,8 +164,8 @@ def confirm_delete_cap_dialog(del_id):
 # -------------------------------------------------------------
 st.title("🍽️ Restaurant & Counter - Cloud Accounts Ledger")
 
-role_badge = "👑 Admin (Full Access)" if is_admin else "👁️ Viewer (Read Only)"
-st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}**")
+role_badge = f"👑 Admin ({current_user_tag})" if is_admin else f"👁️ Viewer ({current_user_tag})"
+st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}** (`{current_user_tag}`)")
 st.sidebar.caption(f"Role: {role_badge}")
 
 with st.sidebar.expander("🔑 Change My Password"):
@@ -192,7 +203,6 @@ if is_admin:
 else:
     menu = ["📊 Reports & Analytics", "📦 Daily Stock Register", "💼 Capital Management"]
 
-# Vertical list menu (সব অপশন নিচে নিচে থাকবে)
 choice = st.sidebar.radio("Select Section:", menu)
 
 st.sidebar.markdown("---")
@@ -242,7 +252,6 @@ if choice == "📝 Daily Entry":
             counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
             product = st.text_input("Product Name (e.g. Total Sale, Chicken Pakoda, Water)")
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
-            # value=None & placeholder="0.00" -> Box displays 0.00, taps directly into blank
             amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=1.0, format="%.2f")
             
             submit_sale = st.form_submit_button("Save Sale to Google Sheets")
@@ -257,11 +266,12 @@ if choice == "📝 Daily Entry":
                         "counter_type": counter,
                         "product_name": product.strip(),
                         "quantity": int(quantity),
-                        "amount": float(final_amt)
+                        "amount": float(final_amt),
+                        "created_by": current_user_tag
                     }])
                     df_sales = pd.concat([df_sales, new_row], ignore_index=True)
                     update_sheet_data("sales", df_sales)
-                    st.success(f"✅ Sale of Rs. {final_amt:,.2f} saved permanently!")
+                    st.success(f"✅ Sale of Rs. {final_amt:,.2f} recorded by {current_user_tag}!")
                     st.rerun()
                 else:
                     st.error("Please enter a valid product name.")
@@ -285,11 +295,12 @@ if choice == "📝 Daily Entry":
                         "entry_date": str(e_date),
                         "category": category,
                         "particulars": particulars.strip(),
-                        "amount": float(final_e_amt)
+                        "amount": float(final_e_amt),
+                        "created_by": current_user_tag
                     }])
                     df_exp = pd.concat([df_exp, new_row], ignore_index=True)
                     update_sheet_data("expenses", df_exp)
-                    st.success(f"✅ Expense of Rs. {final_e_amt:,.2f} saved permanently!")
+                    st.success(f"✅ Expense of Rs. {final_e_amt:,.2f} recorded by {current_user_tag}!")
                     st.rerun()
                 else:
                     st.error("Please enter particulars details.")
@@ -331,11 +342,12 @@ elif choice == "📦 Daily Stock Register":
                             "opening_stock": int(op_stock),
                             "added_stock": int(add_stock),
                             "closing_stock": int(cl_stock),
-                            "sold_quantity": int(calc_sold)
+                            "sold_quantity": int(calc_sold),
+                            "created_by": current_user_tag
                         }])
                         df_stk = pd.concat([df_stk, new_row], ignore_index=True)
                         update_sheet_data("inventory_log", df_stk)
-                        st.success(f"✅ Stock record saved! ({calc_sold} pcs sold)")
+                        st.success(f"✅ Stock record saved by {current_user_tag}! ({calc_sold} pcs sold)")
                         st.rerun()
 
     with (col_st2 if is_admin else col_st2):
@@ -349,6 +361,7 @@ elif choice == "📦 Daily Stock Register":
         df_stock = get_sheet_data("inventory_log", INVENTORY_COLS)
         if not df_stock.empty:
             df_stock['entry_date_parsed'] = pd.to_datetime(df_stock['entry_date'], errors='coerce').dt.date
+            df_stock['created_by'] = df_stock['created_by'].fillna("-")
             df_stock_filtered = df_stock[(df_stock['entry_date_parsed'] >= stk_start) & (df_stock['entry_date_parsed'] <= stk_end)].copy()
             df_stock_filtered = df_stock_filtered.sort_values(by=['entry_date', 'id'], ascending=[False, False])
             
@@ -356,7 +369,8 @@ elif choice == "📦 Daily Stock Register":
                 display_cols = {
                     'id': 'ID', 'entry_date': 'Date', 'item_name': 'Item',
                     'opening_stock': 'Opening', 'added_stock': 'Added',
-                    'closing_stock': 'Closing', 'sold_quantity': 'Sold (Pcs)'
+                    'closing_stock': 'Closing', 'sold_quantity': 'Sold (Pcs)',
+                    'created_by': 'By'
                 }
                 st.dataframe(df_stock_filtered[list(display_cols.keys())].rename(columns=display_cols), use_container_width=True)
                 
@@ -386,8 +400,8 @@ elif choice == "📦 Daily Stock Register":
                             
                             if st.form_submit_button("Update Stock Record"):
                                 idx = df_stock[df_stock['id'] == edit_stock_id].index[0]
-                                df_stock.loc[idx, ['entry_date', 'item_name', 'opening_stock', 'added_stock', 'closing_stock', 'sold_quantity']] = [
-                                    str(e_stk_date), e_stk_item, int(e_op), int(e_add), int(e_cl), int(e_sold)
+                                df_stock.loc[idx, ['entry_date', 'item_name', 'opening_stock', 'added_stock', 'closing_stock', 'sold_quantity', 'created_by']] = [
+                                    str(e_stk_date), e_stk_item, int(e_op), int(e_add), int(e_cl), int(e_sold), current_user_tag
                                 ]
                                 df_stock_to_save = df_stock.drop(columns=['entry_date_parsed'], errors='ignore')
                                 update_sheet_data("inventory_log", df_stock_to_save)
@@ -424,6 +438,7 @@ elif choice == "📊 Reports & Analytics":
 
         if not df_sales_raw.empty:
             df_sales_raw['amount'] = pd.to_numeric(df_sales_raw['amount'], errors='coerce').fillna(0.0)
+            df_sales_raw['created_by'] = df_sales_raw['created_by'].fillna("-")
             df_sales_raw['date_parsed'] = pd.to_datetime(df_sales_raw['entry_date'], errors='coerce').dt.date
             df_sales = df_sales_raw[(df_sales_raw['date_parsed'] >= start_date) & (df_sales_raw['date_parsed'] <= end_date)].copy()
         else:
@@ -431,6 +446,7 @@ elif choice == "📊 Reports & Analytics":
 
         if not df_exp_raw.empty:
             df_exp_raw['amount'] = pd.to_numeric(df_exp_raw['amount'], errors='coerce').fillna(0.0)
+            df_exp_raw['created_by'] = df_exp_raw['created_by'].fillna("-")
             df_exp_raw['date_parsed'] = pd.to_datetime(df_exp_raw['entry_date'], errors='coerce').dt.date
             df_exp = df_exp_raw[(df_exp_raw['date_parsed'] >= start_date) & (df_exp_raw['date_parsed'] <= end_date)].copy()
         else:
@@ -440,7 +456,7 @@ elif choice == "📊 Reports & Analytics":
         total_exp = df_exp['amount'].sum() if not df_exp.empty else 0.0
         net_profit = total_sale - total_exp
         
-        # Excel Generator
+        # Excel Generator with Created By metadata
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_summary = pd.DataFrame({
@@ -501,8 +517,8 @@ elif choice == "📊 Reports & Analytics":
             if not df_sales.empty:
                 df_sales_disp = df_sales.copy()
                 df_sales_disp['amount_fmt'] = df_sales_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(df_sales_disp[['id', 'entry_date', 'counter_type', 'product_name', 'quantity', 'amount_fmt']].rename(
-                    columns={'id': 'ID', 'entry_date': 'Date', 'counter_type': 'Counter', 'product_name': 'Product', 'quantity': 'Qty', 'amount_fmt': 'Amount'}
+                st.dataframe(df_sales_disp[['id', 'entry_date', 'counter_type', 'product_name', 'quantity', 'amount_fmt', 'created_by']].rename(
+                    columns={'id': 'ID', 'entry_date': 'Date', 'counter_type': 'Counter', 'product_name': 'Product', 'quantity': 'Qty', 'amount_fmt': 'Amount', 'created_by': 'By'}
                 ), use_container_width=True)
                 
                 if is_admin:
@@ -524,12 +540,12 @@ elif choice == "📊 Reports & Analytics":
                             
                             if st.form_submit_button("Update Sale Record"):
                                 idx = df_sales_raw[df_sales_raw['id'] == edit_sale_id].index[0]
-                                df_sales_raw.loc[idx, ['entry_date', 'counter_type', 'product_name', 'quantity', 'amount']] = [
-                                    str(es_date), es_counter, es_prod.strip(), int(es_qty), float(es_amt)
+                                df_sales_raw.loc[idx, ['entry_date', 'counter_type', 'product_name', 'quantity', 'amount', 'created_by']] = [
+                                    str(es_date), es_counter, es_prod.strip(), int(es_qty), float(es_amt), current_user_tag
                                 ]
                                 df_to_save = df_sales_raw.drop(columns=['date_parsed'], errors='ignore')
                                 update_sheet_data("sales", df_to_save)
-                                st.success("✅ Sale Record updated in Google Sheets!")
+                                st.success(f"✅ Sale Record updated by {current_user_tag} in Google Sheets!")
                                 st.rerun()
                                 
                     with s_act2:
@@ -544,8 +560,8 @@ elif choice == "📊 Reports & Analytics":
             if not df_exp.empty:
                 df_exp_disp = df_exp.copy()
                 df_exp_disp['amount_fmt'] = df_exp_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                st.dataframe(df_exp_disp[['id', 'entry_date', 'category', 'particulars', 'amount_fmt']].rename(
-                    columns={'id': 'ID', 'entry_date': 'Date', 'category': 'Category', 'particulars': 'Particulars', 'amount_fmt': 'Amount'}
+                st.dataframe(df_exp_disp[['id', 'entry_date', 'category', 'particulars', 'amount_fmt', 'created_by']].rename(
+                    columns={'id': 'ID', 'entry_date': 'Date', 'category': 'Category', 'particulars': 'Particulars', 'amount_fmt': 'Amount', 'created_by': 'By'}
                 ), use_container_width=True)
                 
                 if is_admin:
@@ -565,12 +581,12 @@ elif choice == "📊 Reports & Analytics":
                             
                             if st.form_submit_button("Update Expense Record"):
                                 idx = df_exp_raw[df_exp_raw['id'] == edit_exp_id].index[0]
-                                df_exp_raw.loc[idx, ['entry_date', 'category', 'particulars', 'amount']] = [
-                                    str(ee_date), ee_cat, ee_part.strip(), float(ee_amt)
+                                df_exp_raw.loc[idx, ['entry_date', 'category', 'particulars', 'amount', 'created_by']] = [
+                                    str(ee_date), ee_cat, ee_part.strip(), float(ee_amt), current_user_tag
                                 ]
                                 df_to_save = df_exp_raw.drop(columns=['date_parsed'], errors='ignore')
                                 update_sheet_data("expenses", df_to_save)
-                                st.success("✅ Expense Record updated in Google Sheets!")
+                                st.success(f"✅ Expense Record updated by {current_user_tag} in Google Sheets!")
                                 st.rerun()
                                 
                     with e_act2:
@@ -607,11 +623,12 @@ elif choice == "💼 Capital Management":
                         "id": new_id,
                         "entry_date": str(c_date),
                         "partner_name": partner,
-                        "amount": float(final_cap_amt)
+                        "amount": float(final_cap_amt),
+                        "created_by": current_user_tag
                     }])
                     df_cap = pd.concat([df_cap, new_row], ignore_index=True)
                     update_sheet_data("capital", df_cap)
-                    st.success(f"✅ Capital of Rs. {final_cap_amt:,.2f} for {partner} saved to Google Sheets!")
+                    st.success(f"✅ Capital of Rs. {final_cap_amt:,.2f} for {partner} saved by {current_user_tag}!")
                     st.rerun()
                     
     with (col_c2 if is_admin else col_c2):
@@ -620,6 +637,7 @@ elif choice == "💼 Capital Management":
         
         if not df_cap.empty:
             df_cap['amount'] = pd.to_numeric(df_cap['amount'], errors='coerce').fillna(0.0)
+            df_cap['created_by'] = df_cap['created_by'].fillna("-")
             summary_cap = df_cap.groupby('partner_name')['amount'].sum().reset_index()
             total_invested = summary_cap['amount'].sum()
             
@@ -632,8 +650,8 @@ elif choice == "💼 Capital Management":
             st.markdown("#### Capital Contribution History")
             df_cap_disp = df_cap.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
             df_cap_disp['amount'] = df_cap_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
-            st.dataframe(df_cap_disp[['id', 'entry_date', 'partner_name', 'amount']].rename(
-                columns={'id': 'ID', 'entry_date': 'Date', 'partner_name': 'Partner', 'amount': 'Amount'}
+            st.dataframe(df_cap_disp[['id', 'entry_date', 'partner_name', 'amount', 'created_by']].rename(
+                columns={'id': 'ID', 'entry_date': 'Date', 'partner_name': 'Partner', 'amount': 'Amount', 'created_by': 'By'}
             ), use_container_width=True)
             
             if is_admin:
@@ -652,11 +670,11 @@ elif choice == "💼 Capital Management":
                         
                         if st.form_submit_button("Update Capital Record"):
                             idx = df_cap[df_cap['id'] == edit_cap_id].index[0]
-                            df_cap.loc[idx, ['entry_date', 'partner_name', 'amount']] = [
-                                str(ec_date), ec_partner, float(ec_amt)
+                            df_cap.loc[idx, ['entry_date', 'partner_name', 'amount', 'created_by']] = [
+                                str(ec_date), ec_partner, float(ec_amt), current_user_tag
                             ]
                             update_sheet_data("capital", df_cap)
-                            st.success("✅ Capital Record updated in Google Sheets!")
+                            st.success(f"✅ Capital Record updated by {current_user_tag} in Google Sheets!")
                             st.rerun()
                             
                 with cap_act2:
