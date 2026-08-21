@@ -9,6 +9,78 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="Restaurant Management Ledger", layout="wide")
 
 # -------------------------------------------------------------
+# Custom CSS for Blinking Dots and Top Segmented Navigation
+# -------------------------------------------------------------
+st.markdown("""
+<style>
+@keyframes blinker {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(0.85); }
+    100% { opacity: 1; transform: scale(1); }
+}
+.blink-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    background-color: #22c55e;
+    border-radius: 50%;
+    margin-right: 6px;
+    box-shadow: 0 0 8px #22c55e;
+    animation: blinker 1.4s infinite ease-in-out;
+}
+.off-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background-color: #94a3b8;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+/* Top Segmented Navigation Styling */
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    background-color: #f1f5f9;
+    padding: 6px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border: 1px solid #e2e8f0;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] > label {
+    flex: 1 1 auto;
+    background-color: #ffffff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    margin: 0 !important;
+    text-align: center;
+    font-weight: 500;
+    color: #475569;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
+    background-color: #e2e8f0;
+    color: #0f172a;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] > label[data-checked="true"],
+div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border-color: #0f172a !important;
+    box-shadow: 0 3px 6px rgba(15, 23, 42, 0.25);
+}
+div[data-testid="stRadio"] > div[role="radiogroup"] > label div:first-child {
+    display: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------------------
 # Google Sheets Connection Setup
 # -------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -40,7 +112,6 @@ INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock
 ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
 PRODUCT_OPTIONS = ["Total Food", "Water & Cold Drinks", "Other"]
 
-# Updated Expense Categories
 EXPENSE_CATEGORIES = [
     "Chicken",
     "Fish",
@@ -216,7 +287,7 @@ def confirm_delete_cap_dialog(del_id):
 # -------------------------------------------------------------
 st.title("🍽️ Restaurant & Counter - Cloud Accounts Ledger")
 
-# Online/Offline Live Status Bar (Active within last 5 minutes)
+# Online/Offline Live Status Bar with Blinking Dot
 now_ts = int(time.time())
 df_u_status = get_sheet_data("users", USERS_COLS)
 online_users = []
@@ -243,11 +314,11 @@ if curr_name_cap in ALL_PARTNERS:
     if curr_name_cap in offline_users:
         offline_users.remove(curr_name_cap)
 
-online_html = " ".join([f"<span style='background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:12px; font-weight:600; margin-right:5px;'>🟢 {u}</span>" for u in online_users])
-offline_html = " ".join([f"<span style='background:#f1f5f9; color:#64748b; padding:3px 10px; border-radius:12px; font-weight:500; margin-right:5px;'>⚪ {u}</span>" for u in offline_users])
+online_html = " ".join([f"<span style='background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:12px; font-weight:600; margin-right:5px; display:inline-flex; align-items:center;'><span class='blink-dot'></span>{u}</span>" for u in online_users])
+offline_html = " ".join([f"<span style='background:#f1f5f9; color:#64748b; padding:3px 10px; border-radius:12px; font-weight:500; margin-right:5px; display:inline-flex; align-items:center;'><span class='off-dot'></span>{u}</span>" for u in offline_users])
 
 st.markdown(f"""
-<div style="background-color:#ffffff; border:1px solid #e2e8f0; padding:10px 16px; border-radius:10px; margin-bottom:18px; display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
+<div style="background-color:#ffffff; border:1px solid #e2e8f0; padding:10px 16px; border-radius:10px; margin-bottom:14px; display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
     <div style="display:flex; align-items:center;">
         <b style="color:#0f172a; margin-right:8px;">Online ({len(online_users)}):</b> {online_html if online_users else '<span style=\"color:#94a3b8;\">None</span>'}
     </div>
@@ -258,6 +329,17 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# -------------------------------------------------------------
+# Top Horizontal Segmented Navigation Menu (Dark Active / Light Inactive)
+# -------------------------------------------------------------
+if is_admin:
+    menu_options = ["📝 Daily Entry", "📦 Daily Stock Register", "📊 Reports & Analytics", "💼 Capital Management"]
+else:
+    menu_options = ["📊 Reports & Analytics", "📦 Daily Stock Register", "💼 Capital Management"]
+
+choice = st.radio("", menu_options, horizontal=True, label_visibility="collapsed")
+
+# Sidebar profile & credentials
 role_badge = f"👑 Admin ({current_user_tag})" if is_admin else f"👁️ Viewer ({current_user_tag})"
 st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}** (`{current_user_tag}`)")
 st.sidebar.caption(f"Role: {role_badge}")
@@ -291,17 +373,11 @@ with st.sidebar.expander("🔑 Change My Password"):
                     update_sheet_data("users", df_users_save)
                     st.success("✅ Password updated in Google Sheet!")
 
-st.sidebar.markdown("### 📋 Navigation Menu")
-if is_admin:
-    menu = ["📝 Daily Entry", "📦 Daily Stock Register", "📊 Reports & Analytics", "💼 Capital Management"]
-else:
-    menu = ["📊 Reports & Analytics", "📦 Daily Stock Register", "💼 Capital Management"]
-
-choice = st.sidebar.radio("Select Section:", menu)
-
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Logout", use_container_width=True):
     logout()
+
+PARTNERS_LIST = ["Abhijit", "Jit", "Debasis", "Sumit"]
 
 def parse_db_date(val):
     if isinstance(val, date):
@@ -328,9 +404,8 @@ if choice == "📝 Daily Entry":
             s_date = st.date_input("Date", value=date.today(), key="s_date")
             counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
             
-            # Product Dropdown with Other option
             product_sel = st.selectbox("Product Category", PRODUCT_OPTIONS, key="sale_prod_sel")
-            other_product = st.text_input("Specify if 'Other'", key="sale_other_prod", placeholder="e.g. Cold Drinks, Special Item")
+            other_product = st.text_input("Specify if 'Other'", key="sale_other_prod", placeholder="e.g. Special Item")
             
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
             amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=1.0, format="%.2f")
@@ -543,12 +618,17 @@ elif choice == "📊 Reports & Analytics":
         total_exp = df_exp['amount'].sum() if not df_exp.empty else 0.0
         net_profit = total_sale - total_exp
         
+        # Days calculation for Averages
+        num_days = max(1, (end_date - start_date).days + 1)
+        avg_sale_day = total_sale / num_days
+        avg_exp_day = total_exp / num_days
+        
         # Excel Generator with Created By metadata
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_summary = pd.DataFrame({
-                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss"],
-                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit]
+                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day"],
+                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day]
             })
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
             df_sales.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Sales Register', index=False)
@@ -567,35 +647,62 @@ elif choice == "📊 Reports & Analytics":
         card_col1, card_col2, card_col3 = st.columns(3)
         with card_col1:
             st.markdown(f"""
-            <div style="background-color: #f0fdf4; border: 1px solid #86efac; padding: 15px; border-radius: 8px;">
-                <p style="margin: 0; color: #166534; font-size: 14px; font-weight: bold;">TOTAL SALES</p>
-                <h2 style="margin: 5px 0 0 0; color: #15803d;">Rs. {total_sale:,.2f}</h2>
+            <div style="background-color: #f0fdf4; border: 1px solid #86efac; padding: 14px; border-radius: 8px;">
+                <p style="margin: 0; color: #166534; font-size: 13px; font-weight: bold;">TOTAL SALES</p>
+                <h2 style="margin: 5px 0 0 0; color: #15803d; font-size: 26px;">Rs. {total_sale:,.2f}</h2>
             </div>
             """, unsafe_allow_html=True)
             
         with card_col2:
             st.markdown(f"""
-            <div style="background-color: #fff1f2; border: 1px solid #fecdd3; padding: 15px; border-radius: 8px;">
-                <p style="margin: 0; color: #9f1239; font-size: 14px; font-weight: bold;">TOTAL EXPENSES</p>
-                <h2 style="margin: 5px 0 0 0; color: #be123c;">Rs. {total_exp:,.2f}</h2>
+            <div style="background-color: #fff1f2; border: 1px solid #fecdd3; padding: 14px; border-radius: 8px;">
+                <p style="margin: 0; color: #9f1239; font-size: 13px; font-weight: bold;">TOTAL EXPENSES</p>
+                <h2 style="margin: 5px 0 0 0; color: #be123c; font-size: 26px;">Rs. {total_exp:,.2f}</h2>
             </div>
             """, unsafe_allow_html=True)
             
         with card_col3:
             if net_profit >= 0:
                 st.markdown(f"""
-                <div style="background-color: #dcfce7; border: 2px solid #22c55e; padding: 15px; border-radius: 8px;">
-                    <p style="margin: 0; color: #14532d; font-size: 14px; font-weight: bold;">NET PROFIT (SURPLUS)</p>
-                    <h2 style="margin: 5px 0 0 0; color: #16a34a;">+ Rs. {net_profit:,.2f}</h2>
+                <div style="background-color: #dcfce7; border: 2px solid #22c55e; padding: 14px; border-radius: 8px;">
+                    <p style="margin: 0; color: #14532d; font-size: 13px; font-weight: bold;">NET PROFIT (SURPLUS)</p>
+                    <h2 style="margin: 5px 0 0 0; color: #16a34a; font-size: 26px;">+ Rs. {net_profit:,.2f}</h2>
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
-                <div style="background-color: #fee2e2; border: 2px solid #ef4444; padding: 15px; border-radius: 8px;">
-                    <p style="margin: 0; color: #7f1d1d; font-size: 14px; font-weight: bold;">NET LOSS (DEFICIT)</p>
-                    <h2 style="margin: 5px 0 0 0; color: #dc2626;">- Rs. {abs(net_profit):,.2f}</h2>
+                <div style="background-color: #fee2e2; border: 2px solid #ef4444; padding: 14px; border-radius: 8px;">
+                    <p style="margin: 0; color: #7f1d1d; font-size: 13px; font-weight: bold;">NET LOSS (DEFICIT)</p>
+                    <h2 style="margin: 5px 0 0 0; color: #dc2626; font-size: 26px;">- Rs. {abs(net_profit):,.2f}</h2>
                 </div>
                 """, unsafe_allow_html=True)
+
+        # Average Sale vs Expense Analysis Cards
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        avg_col1, avg_col2 = st.columns(2)
+        
+        # Color coding: Green if Avg Sale >= Avg Exp, else Red
+        is_avg_sale_higher = (avg_sale_day >= avg_exp_day)
+        sale_card_bg = "#f0fdf4" if is_avg_sale_higher else "#fff1f2"
+        sale_card_border = "#86efac" if is_avg_sale_higher else "#fecdd3"
+        sale_card_txt = "#15803d" if is_avg_sale_higher else "#dc2626"
+        sale_card_title = "#166534" if is_avg_sale_higher else "#9f1239"
+
+        with avg_col1:
+            st.markdown(f"""
+            <div style="background-color: {sale_card_bg}; border: 1.5px solid {sale_card_border}; padding: 12px; border-radius: 8px;">
+                <p style="margin: 0; color: {sale_card_title}; font-size: 12px; font-weight: bold; text-transform: uppercase;">Average Sale / Day ({num_days} Days)</p>
+                <h3 style="margin: 4px 0 0 0; color: {sale_card_txt}; font-size: 20px;">Rs. {avg_sale_day:,.2f} <span style="font-size: 13px; font-weight: normal; color: {sale_card_title};">/ day</span></h3>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with avg_col2:
+            st.markdown(f"""
+            <div style="background-color: #fff1f2; border: 1.5px solid #fecdd3; padding: 12px; border-radius: 8px;">
+                <p style="margin: 0; color: #9f1239; font-size: 12px; font-weight: bold; text-transform: uppercase;">Average Expense / Day ({num_days} Days)</p>
+                <h3 style="margin: 4px 0 0 0; color: #be123c; font-size: 20px;">Rs. {avg_exp_day:,.2f} <span style="font-size: 13px; font-weight: normal; color: #9f1239;">/ day</span></h3>
+            </div>
+            """, unsafe_allow_html=True)
                 
         st.markdown("---")
         tab1, tab2 = st.tabs(["Sales Breakdown", "Expense Breakdown"])
