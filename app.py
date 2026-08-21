@@ -9,7 +9,7 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="Restaurant Management Ledger", layout="wide", initial_sidebar_state="collapsed")
 
 # -------------------------------------------------------------
-# Custom CSS for Blinking Dots, Light-On Nav, and Compact Action Buttons
+# Custom CSS for Blinking Dots and Light-On Nav
 # -------------------------------------------------------------
 st.markdown("""
 <style>
@@ -56,7 +56,6 @@ div[data-testid="stButton"] button:hover {
     color: #0f172a !important;
 }
 
-/* Glowing Neon Active State (when primary button type is used) */
 div[data-testid="stButton"] button[kind="primary"] {
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
     color: #38bdf8 !important;
@@ -64,26 +63,6 @@ div[data-testid="stButton"] button[kind="primary"] {
     box-shadow: 0 0 16px rgba(56, 189, 248, 0.45), inset 0 0 8px rgba(56, 189, 248, 0.2) !important;
     text-shadow: 0 0 10px rgba(56, 189, 248, 0.75) !important;
     font-weight: 700 !important;
-}
-
-/* Table Row List Item Styling */
-.table-header-row {
-    background-color: #f1f5f9;
-    font-weight: 700;
-    color: #334155;
-    padding: 8px 12px;
-    border-radius: 6px;
-    margin-bottom: 6px;
-    font-size: 13px;
-}
-.table-data-row {
-    background-color: #ffffff;
-    border: 1px solid #e2e8f0;
-    padding: 8px 12px;
-    border-radius: 8px;
-    margin-bottom: 6px;
-    align-items: center;
-    font-size: 14px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -160,7 +139,6 @@ if "logged_in" not in st.session_state:
     st.session_state.username = ""
     st.session_state.role = ""
 
-# Land directly on Reports & Analytics by default
 if "current_nav_section" not in st.session_state:
     st.session_state.current_nav_section = "📊 Reports & Analytics"
 
@@ -196,7 +174,6 @@ def login():
                 st.session_state.logged_in = True
                 st.session_state.username = user
                 st.session_state.role = str(user_row.iloc[0]['role']).strip().lower()
-                # Set Reports & Analytics upon login
                 st.session_state.current_nav_section = "📊 Reports & Analytics"
                 update_user_heartbeat(user)
                 st.success("Login successful!")
@@ -587,12 +564,10 @@ if choice == "📊 Reports & Analytics":
         total_exp = df_exp['amount'].sum() if not df_exp.empty else 0.0
         net_profit = total_sale - total_exp
         
-        # Days calculation for Averages
         num_days = max(1, (end_date - start_date).days + 1)
         avg_sale_day = total_sale / num_days
         avg_exp_day = total_exp / num_days
         
-        # Excel Generator with Created By metadata
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_summary = pd.DataFrame({
@@ -646,7 +621,6 @@ if choice == "📊 Reports & Analytics":
                 </div>
                 """, unsafe_allow_html=True)
 
-        # Average Sale vs Expense Analysis Cards
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         avg_col1, avg_col2 = st.columns(2)
         
@@ -678,82 +652,50 @@ if choice == "📊 Reports & Analytics":
         with tab1:
             if not df_sales.empty:
                 df_sales_disp = df_sales.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
+                df_sales_disp['amount_fmt'] = df_sales_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
                 
-                # Table Header
+                st.dataframe(df_sales_disp[['id', 'entry_date', 'counter_type', 'product_name', 'quantity', 'amount_fmt', 'created_by']].rename(
+                    columns={'id': 'ID', 'entry_date': 'Date', 'counter_type': 'Counter', 'product_name': 'Product', 'quantity': 'Qty', 'amount_fmt': 'Amount', 'created_by': 'By'}
+                ), use_container_width=True)
+                
                 if is_admin:
-                    h_cols = st.columns([1.2, 1.4, 2.0, 0.8, 1.4, 0.8, 0.6, 0.6])
-                    headers = ["Date", "Counter", "Product", "Qty", "Amount", "By", "Edit", "Del"]
-                else:
-                    h_cols = st.columns([1.2, 1.4, 2.0, 0.8, 1.4, 0.8])
-                    headers = ["Date", "Counter", "Product", "Qty", "Amount", "By"]
-                
-                for hc, h in zip(h_cols, headers):
-                    hc.markdown(f"**{h}**")
-                
-                # Table Data Rows with inline Edit & Delete Buttons
-                for _, r in df_sales_disp.iterrows():
-                    rec_id = r['id']
-                    if is_admin:
-                        c_date, c_cntr, c_prd, c_qty, c_amt, c_by, c_edt, c_del = st.columns([1.2, 1.4, 2.0, 0.8, 1.4, 0.8, 0.6, 0.6])
-                        c_date.write(str(r['entry_date']))
-                        c_cntr.write(str(r['counter_type']))
-                        c_prd.write(str(r['product_name']))
-                        c_qty.write(str(r['quantity']))
-                        c_amt.write(f"Rs. {float(r['amount']):,.2f}")
-                        c_by.write(f"`{r['created_by']}`")
-                        
-                        if c_edt.button("✏️", key=f"btn_edit_s_{rec_id}", help="Edit Record"):
-                            edit_sale_dialog(rec_id)
-                        if c_del.button("🗑️", key=f"btn_del_s_{rec_id}", help="Delete Record"):
-                            confirm_delete_sale_dialog(rec_id)
-                    else:
-                        c_date, c_cntr, c_prd, c_qty, c_amt, c_by = st.columns([1.2, 1.4, 2.0, 0.8, 1.4, 0.8])
-                        c_date.write(str(r['entry_date']))
-                        c_cntr.write(str(r['counter_type']))
-                        c_prd.write(str(r['product_name']))
-                        c_qty.write(str(r['quantity']))
-                        c_amt.write(f"Rs. {float(r['amount']):,.2f}")
-                        c_by.write(f"`{r['created_by']}`")
+                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                    act_col_s1, act_col_s2, act_col_s3 = st.columns([1.5, 1, 1])
+                    with act_col_s1:
+                        target_sale_id = st.selectbox("Select Sale ID to Action", df_sales_disp['id'].tolist(), key="sel_s_act")
+                    with act_col_s2:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("✏️ Edit Sale", key="btn_ed_s", use_container_width=True):
+                            edit_sale_dialog(target_sale_id)
+                    with act_col_s3:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("🗑️ Delete Sale", key="btn_dl_s", use_container_width=True):
+                            confirm_delete_sale_dialog(target_sale_id)
             else:
                 st.info("No sales records found for this period.")
                 
         with tab2:
             if not df_exp.empty:
                 df_exp_disp = df_exp.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
+                df_exp_disp['amount_fmt'] = df_exp_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
                 
-                # Table Header
+                st.dataframe(df_exp_disp[['id', 'entry_date', 'category', 'particulars', 'amount_fmt', 'created_by']].rename(
+                    columns={'id': 'ID', 'entry_date': 'Date', 'category': 'Category', 'particulars': 'Particulars', 'amount_fmt': 'Amount', 'created_by': 'By'}
+                ), use_container_width=True)
+                
                 if is_admin:
-                    h_cols = st.columns([1.2, 1.8, 2.0, 1.4, 0.8, 0.6, 0.6])
-                    headers = ["Date", "Category", "Particulars", "Amount", "By", "Edit", "Del"]
-                else:
-                    h_cols = st.columns([1.2, 1.8, 2.0, 1.4, 0.8])
-                    headers = ["Date", "Category", "Particulars", "Amount", "By"]
-                
-                for hc, h in zip(h_cols, headers):
-                    hc.markdown(f"**{h}**")
-                
-                # Table Data Rows with inline Edit & Delete Buttons
-                for _, r in df_exp_disp.iterrows():
-                    rec_id = r['id']
-                    if is_admin:
-                        c_date, c_cat, c_part, c_amt, c_by, c_edt, c_del = st.columns([1.2, 1.8, 2.0, 1.4, 0.8, 0.6, 0.6])
-                        c_date.write(str(r['entry_date']))
-                        c_cat.write(str(r['category']))
-                        c_part.write(str(r['particulars']))
-                        c_amt.write(f"Rs. {float(r['amount']):,.2f}")
-                        c_by.write(f"`{r['created_by']}`")
-                        
-                        if c_edt.button("✏️", key=f"btn_edit_e_{rec_id}", help="Edit Record"):
-                            edit_expense_dialog(rec_id)
-                        if c_del.button("🗑️", key=f"btn_del_e_{rec_id}", help="Delete Record"):
-                            confirm_delete_exp_dialog(rec_id)
-                    else:
-                        c_date, c_cat, c_part, c_amt, c_by = st.columns([1.2, 1.8, 2.0, 1.4, 0.8])
-                        c_date.write(str(r['entry_date']))
-                        c_cat.write(str(r['category']))
-                        c_part.write(str(r['particulars']))
-                        c_amt.write(f"Rs. {float(r['amount']):,.2f}")
-                        c_by.write(f"`{r['created_by']}`")
+                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                    act_col_e1, act_col_e2, act_col_e3 = st.columns([1.5, 1, 1])
+                    with act_col_e1:
+                        target_exp_id = st.selectbox("Select Expense ID to Action", df_exp_disp['id'].tolist(), key="sel_e_act")
+                    with act_col_e2:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("✏️ Edit Expense", key="btn_ed_e", use_container_width=True):
+                            edit_expense_dialog(target_exp_id)
+                    with act_col_e3:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("🗑️ Delete Expense", key="btn_dl_e", use_container_width=True):
+                            confirm_delete_exp_dialog(target_exp_id)
             else:
                 st.info("No expense records found for this period.")
     else:
@@ -899,48 +841,32 @@ elif choice == "📦 Daily Stock Register":
             df_stock_filtered = df_stock_filtered.sort_values(by=['entry_date', 'id'], ascending=[False, False])
             
             if not df_stock_filtered.empty:
-                # Table Header
-                if is_admin:
-                    h_cols = st.columns([1.2, 2.0, 0.8, 0.8, 0.8, 1.0, 0.8, 0.6, 0.6])
-                    headers = ["Date", "Item", "Open", "Add", "Close", "Sold", "By", "Edit", "Del"]
-                else:
-                    h_cols = st.columns([1.2, 2.0, 0.8, 0.8, 0.8, 1.0, 0.8])
-                    headers = ["Date", "Item", "Open", "Add", "Close", "Sold", "By"]
+                display_cols = {
+                    'id': 'ID', 'entry_date': 'Date', 'item_name': 'Item',
+                    'opening_stock': 'Opening', 'added_stock': 'Added',
+                    'closing_stock': 'Closing', 'sold_quantity': 'Sold (Pcs)',
+                    'created_by': 'By'
+                }
+                st.dataframe(df_stock_filtered[list(display_cols.keys())].rename(columns=display_cols), use_container_width=True)
                 
-                for hc, h in zip(h_cols, headers):
-                    hc.markdown(f"**{h}**")
-                
-                for _, r in df_stock_filtered.iterrows():
-                    rec_id = r['id']
-                    if is_admin:
-                        c_date, c_itm, c_op, c_add, c_cl, c_sld, c_by, c_edt, c_del = st.columns([1.2, 2.0, 0.8, 0.8, 0.8, 1.0, 0.8, 0.6, 0.6])
-                        c_date.write(str(r['entry_date']))
-                        c_itm.write(str(r['item_name']))
-                        c_op.write(str(r['opening_stock']))
-                        c_add.write(str(r['added_stock']))
-                        c_cl.write(str(r['closing_stock']))
-                        c_sld.write(f"**{r['sold_quantity']}**")
-                        c_by.write(f"`{r['created_by']}`")
-                        
-                        if c_edt.button("✏️", key=f"btn_edit_stk_{rec_id}", help="Edit Stock"):
-                            edit_stock_dialog(rec_id)
-                        if c_del.button("🗑️", key=f"btn_del_stk_{rec_id}", help="Delete Stock"):
-                            confirm_delete_stock_dialog(rec_id)
-                    else:
-                        c_date, c_itm, c_op, c_add, c_cl, c_sld, c_by = st.columns([1.2, 2.0, 0.8, 0.8, 0.8, 1.0, 0.8])
-                        c_date.write(str(r['entry_date']))
-                        c_itm.write(str(r['item_name']))
-                        c_op.write(str(r['opening_stock']))
-                        c_add.write(str(r['added_stock']))
-                        c_cl.write(str(r['closing_stock']))
-                        c_sld.write(f"**{r['sold_quantity']}**")
-                        c_by.write(f"`{r['created_by']}`")
-                
-                st.markdown("---")
                 st.markdown("#### 📊 Total Quantity Sold in Period")
                 df_stock_filtered['sold_quantity'] = pd.to_numeric(df_stock_filtered['sold_quantity'], errors='coerce').fillna(0)
                 sold_sum = df_stock_filtered.groupby('item_name')['sold_quantity'].sum().reset_index()
                 st.dataframe(sold_sum.rename(columns={'item_name': 'Item', 'sold_quantity': 'Total Sold (Pcs)'}), use_container_width=True)
+                
+                if is_admin:
+                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                    stk_act1, stk_act2, stk_act3 = st.columns([1.5, 1, 1])
+                    with stk_act1:
+                        target_stk_id = st.selectbox("Select Stock ID to Action", df_stock_filtered['id'].tolist(), key="sel_stk_act")
+                    with stk_act2:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("✏️ Edit Stock", key="btn_ed_stk", use_container_width=True):
+                            edit_stock_dialog(target_stk_id)
+                    with stk_act3:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("🗑️ Delete Stock", key="btn_dl_stk", use_container_width=True):
+                            confirm_delete_stock_dialog(target_stk_id)
             else:
                 st.info("No stock records found for this period.")
         else:
@@ -997,36 +923,23 @@ elif choice == "💼 Capital Management":
             
             st.markdown("#### Capital Contribution History")
             df_cap_disp = df_cap.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
+            df_cap_disp['amount'] = df_cap_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+            st.dataframe(df_cap_disp[['id', 'entry_date', 'partner_name', 'amount', 'created_by']].rename(
+                columns={'id': 'ID', 'entry_date': 'Date', 'partner_name': 'Partner', 'amount': 'Amount', 'created_by': 'By'}
+            ), use_container_width=True)
             
-            # Table Header
             if is_admin:
-                h_cols = st.columns([1.2, 1.8, 1.6, 0.8, 0.6, 0.6])
-                headers = ["Date", "Partner", "Amount", "By", "Edit", "Del"]
-            else:
-                h_cols = st.columns([1.2, 1.8, 1.6, 0.8])
-                headers = ["Date", "Partner", "Amount", "By"]
-            
-            for hc, h in zip(h_cols, headers):
-                hc.markdown(f"**{h}**")
-            
-            for _, r in df_cap_disp.iterrows():
-                rec_id = r['id']
-                if is_admin:
-                    c_date, c_prt, c_amt, c_by, c_edt, c_del = st.columns([1.2, 1.8, 1.6, 0.8, 0.6, 0.6])
-                    c_date.write(str(r['entry_date']))
-                    c_prt.write(str(r['partner_name']))
-                    c_amt.write(f"Rs. {float(r['amount']):,.2f}")
-                    c_by.write(f"`{r['created_by']}`")
-                    
-                    if c_edt.button("✏️", key=f"btn_edit_cap_{rec_id}", help="Edit Capital"):
-                        edit_capital_dialog(rec_id)
-                    if c_del.button("🗑️", key=f"btn_del_cap_{rec_id}", help="Delete Capital"):
-                        confirm_delete_cap_dialog(rec_id)
-                else:
-                    c_date, c_prt, c_amt, c_by = st.columns([1.2, 1.8, 1.6, 0.8])
-                    c_date.write(str(r['entry_date']))
-                    c_prt.write(str(r['partner_name']))
-                    c_amt.write(f"Rs. {float(r['amount']):,.2f}")
-                    c_by.write(f"`{r['created_by']}`")
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                cap_act1, cap_act2, cap_act3 = st.columns([1.5, 1, 1])
+                with cap_act1:
+                    target_cap_id = st.selectbox("Select Capital ID to Action", df_cap_disp['id'].tolist(), key="sel_cap_act")
+                with cap_act2:
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    if st.button("✏️ Edit Capital", key="btn_ed_cap", use_container_width=True):
+                        edit_capital_dialog(target_cap_id)
+                with cap_act3:
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    if st.button("🗑️ Delete Capital", key="btn_dl_cap", use_container_width=True):
+                        confirm_delete_cap_dialog(target_cap_id)
         else:
             st.info("No capital contributions found in Google Sheet.")
