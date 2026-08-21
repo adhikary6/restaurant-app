@@ -26,7 +26,9 @@ def get_sheet_data(worksheet_name, expected_cols):
         return pd.DataFrame(columns=expected_cols)
 
 def update_sheet_data(worksheet_name, df):
-    conn.update(worksheet=worksheet_name, data=df)
+    # Convert all columns to standard types to prevent Google Sheets casting errors
+    df_clean = df.copy()
+    conn.update(worksheet=worksheet_name, data=df_clean)
 
 # Default Schemas
 USERS_COLS = ["username", "password", "role"]
@@ -54,14 +56,12 @@ def login():
         
         if btn:
             df_users = get_sheet_data("users", USERS_COLS)
+            df_users['username'] = df_users['username'].astype(str).str.strip().str.lower()
+            df_users['password'] = df_users['password'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
             
-            # Format columns cleanly to string
-            df_users['username_clean'] = df_users['username'].astype(str).str.strip().str.lower()
-            df_users['password_clean'] = df_users['password'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            user_row = df_users[df_users['username'] == user]
             
-            user_row = df_users[df_users['username_clean'] == user]
-            
-            if not user_row.empty and user_row.iloc[0]['password_clean'] == pwd:
+            if not user_row.empty and user_row.iloc[0]['password'] == pwd:
                 st.session_state.logged_in = True
                 st.session_state.username = user
                 st.session_state.role = str(user_row.iloc[0]['role']).strip().lower()
@@ -100,19 +100,26 @@ with st.sidebar.expander("🔑 Change My Password"):
         
         if update_p_btn:
             df_users = get_sheet_data("users", USERS_COLS)
-            user_idx = df_users[df_users['username'].astype(str).str.lower() == st.session_state.username].index
+            # Ensure all columns are treated as string/object dtype
+            df_users = df_users.astype({"username": str, "password": str, "role": str})
+            df_users['username_clean'] = df_users['username'].str.strip().str.lower()
+            df_users['password_clean'] = df_users['password'].str.replace(r'\.0$', '', regex=True).str.strip()
+            
+            user_idx = df_users[df_users['username_clean'] == st.session_state.username].index
             
             if not user_idx.empty:
-                curr_pwd = str(df_users.loc[user_idx[0], 'password']).replace('.0', '').strip()
-                if old_p != curr_pwd:
+                curr_pwd = df_users.loc[user_idx[0], 'password_clean']
+                if old_p.strip() != curr_pwd:
                     st.error("Current password is incorrect.")
                 elif not new_p.strip():
                     st.error("New password cannot be empty.")
-                elif new_p != conf_p:
+                elif new_p.strip() != conf_p.strip():
                     st.error("New passwords do not match.")
                 else:
-                    df_users.loc[user_idx[0], 'password'] = new_p.strip()
-                    update_sheet_data("users", df_users)
+                    # Update password cleanly
+                    df_users_save = df_users[['username', 'password', 'role']].copy()
+                    df_users_save.loc[user_idx[0], 'password'] = str(new_p.strip())
+                    update_sheet_data("users", df_users_save)
                     st.success("✅ Password updated in Google Sheet!")
 
 if is_admin:
@@ -175,14 +182,14 @@ if choice == "Daily Entry":
             if submit_sale:
                 if product.strip():
                     df_sales = get_sheet_data("sales", SALES_COLS)
-                    new_id = 1 if df_sales.empty else int(pd.to_numeric(df_sales['id'], errors='coerce').max() + 1)
+                    new_id = 1 if df_sales.empty else int(pd.to_numeric(df_sales['id'], errors='coerce').fillna(0).max() + 1)
                     new_row = pd.DataFrame([{
                         "id": new_id,
                         "entry_date": str(s_date),
                         "counter_type": counter,
                         "product_name": product.strip(),
-                        "quantity": quantity,
-                        "amount": amount
+                        "quantity": int(quantity),
+                        "amount": float(amount)
                     }])
                     df_sales = pd.concat([df_sales, new_row], ignore_index=True)
                     update_sheet_data("sales", df_sales)
@@ -203,13 +210,13 @@ if choice == "Daily Entry":
             if submit_exp:
                 if particulars.strip():
                     df_exp = get_sheet_data("expenses", EXPENSES_COLS)
-                    new_id = 1 if df_exp.empty else int(pd.to_numeric(df_exp['id'], errors='coerce').max() + 1)
+                    new_id = 1 if df_exp.empty else int(pd.to_numeric(df_exp['id'], errors='coerce').fillna(0).max() + 1)
                     new_row = pd.DataFrame([{
                         "id": new_id,
                         "entry_date": str(e_date),
                         "category": category,
                         "particulars": particulars.strip(),
-                        "amount": e_amount
+                        "amount": float(e_amount)
                     }])
                     df_exp = pd.concat([df_exp, new_row], ignore_index=True)
                     update_sheet_data("expenses", df_exp)
@@ -247,15 +254,15 @@ elif choice == "Daily Stock Register":
                         st.error(f"Closing stock cannot exceed Total Available ({total_available})!")
                     else:
                         df_stk = get_sheet_data("inventory_log", INVENTORY_COLS)
-                        new_id = 1 if df_stk.empty else int(pd.to_numeric(df_stk['id'], errors='coerce').max() + 1)
+                        new_id = 1 if df_stk.empty else int(pd.to_numeric(df_stk['id'], errors='coerce').fillna(0).max() + 1)
                         new_row = pd.DataFrame([{
                             "id": new_id,
                             "entry_date": str(stk_date),
                             "item_name": stk_item,
-                            "opening_stock": op_stock,
-                            "added_stock": add_stock,
-                            "closing_stock": cl_stock,
-                            "sold_quantity": calc_sold
+                            "opening_stock": int(op_stock),
+                            "added_stock": int(add_stock),
+                            "closing_stock": int(cl_stock),
+                            "sold_quantity": int(calc_sold)
                         }])
                         df_stk = pd.concat([df_stk, new_row], ignore_index=True)
                         update_sheet_data("inventory_log", df_stk)
@@ -311,7 +318,7 @@ elif choice == "Daily Stock Register":
                             if st.form_submit_button("Update Stock Record"):
                                 idx = df_stock[df_stock['id'] == edit_stock_id].index[0]
                                 df_stock.loc[idx, ['entry_date', 'item_name', 'opening_stock', 'added_stock', 'closing_stock', 'sold_quantity']] = [
-                                    str(e_stk_date), e_stk_item, e_op, e_add, e_cl, e_sold
+                                    str(e_stk_date), e_stk_item, int(e_op), int(e_add), int(e_cl), int(e_sold)
                                 ]
                                 df_stock_to_save = df_stock.drop(columns=['entry_date_parsed'], errors='ignore')
                                 update_sheet_data("inventory_log", df_stock_to_save)
@@ -453,7 +460,7 @@ elif choice == "Reports & Analytics":
                             if st.form_submit_button("Update Sale Record"):
                                 idx = df_sales_raw[df_sales_raw['id'] == edit_sale_id].index[0]
                                 df_sales_raw.loc[idx, ['entry_date', 'counter_type', 'product_name', 'quantity', 'amount']] = [
-                                    str(es_date), es_counter, es_prod.strip(), es_qty, es_amt
+                                    str(es_date), es_counter, es_prod.strip(), int(es_qty), float(es_amt)
                                 ]
                                 df_to_save = df_sales_raw.drop(columns=['date_parsed'], errors='ignore')
                                 update_sheet_data("sales", df_to_save)
@@ -498,7 +505,7 @@ elif choice == "Reports & Analytics":
                             if st.form_submit_button("Update Expense Record"):
                                 idx = df_exp_raw[df_exp_raw['id'] == edit_exp_id].index[0]
                                 df_exp_raw.loc[idx, ['entry_date', 'category', 'particulars', 'amount']] = [
-                                    str(ee_date), ee_cat, ee_part.strip(), ee_amt
+                                    str(ee_date), ee_cat, ee_part.strip(), float(ee_amt)
                                 ]
                                 df_to_save = df_exp_raw.drop(columns=['date_parsed'], errors='ignore')
                                 update_sheet_data("expenses", df_to_save)
@@ -537,12 +544,12 @@ elif choice == "Capital Management":
                 
                 if st.form_submit_button("Record Capital"):
                     df_cap = get_sheet_data("capital", CAPITAL_COLS)
-                    new_id = 1 if df_cap.empty else int(pd.to_numeric(df_cap['id'], errors='coerce').max() + 1)
+                    new_id = 1 if df_cap.empty else int(pd.to_numeric(df_cap['id'], errors='coerce').fillna(0).max() + 1)
                     new_row = pd.DataFrame([{
                         "id": new_id,
                         "entry_date": str(c_date),
                         "partner_name": partner,
-                        "amount": cap_amount
+                        "amount": float(cap_amount)
                     }])
                     df_cap = pd.concat([df_cap, new_row], ignore_index=True)
                     update_sheet_data("capital", df_cap)
@@ -588,7 +595,7 @@ elif choice == "Capital Management":
                         if st.form_submit_button("Update Capital Record"):
                             idx = df_cap[df_cap['id'] == edit_cap_id].index[0]
                             df_cap.loc[idx, ['entry_date', 'partner_name', 'amount']] = [
-                                str(ec_date), ec_partner, ec_amt
+                                str(ec_date), ec_partner, float(ec_amt)
                             ]
                             update_sheet_data("capital", df_cap)
                             st.success("✅ Capital Record updated in Google Sheets!")
@@ -604,4 +611,3 @@ elif choice == "Capital Management":
                         st.rerun()
         else:
             st.info("No capital contributions found in Google Sheet.")
-
