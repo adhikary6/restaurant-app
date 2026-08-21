@@ -38,6 +38,7 @@ CAPITAL_COLS = ["id", "entry_date", "partner_name", "amount", "created_by"]
 INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock", "closing_stock", "sold_quantity", "created_by"]
 
 ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
+PRODUCT_OPTIONS = ["Total Food", "Water & Cold Drinks", "Other"]
 
 # -------------------------------------------------------------
 # Authentication Flow
@@ -197,7 +198,6 @@ online_users = []
 offline_users = []
 
 for partner in ALL_PARTNERS:
-    # Match partner username
     matched_row = df_u_status[df_u_status['username'].astype(str).str.strip().str.lower() == partner.lower()]
     if not matched_row.empty:
         try:
@@ -211,7 +211,6 @@ for partner in ALL_PARTNERS:
     else:
         offline_users.append(partner)
 
-# Always keep current logged-in user in Online
 curr_name_cap = st.session_state.username.capitalize()
 if curr_name_cap in ALL_PARTNERS:
     if curr_name_cap not in online_users:
@@ -320,21 +319,27 @@ if choice == "📝 Daily Entry":
         with st.form("sale_form", clear_on_submit=True):
             s_date = st.date_input("Date", value=date.today(), key="s_date")
             counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
-            product = st.text_input("Product Name (e.g. Total Sale, Chicken Pakoda, Water)")
+            
+            # Product Dropdown with Other option
+            product_sel = st.selectbox("Product Category", PRODUCT_OPTIONS, key="sale_prod_sel")
+            other_product = st.text_input("Specify if 'Other'", key="sale_other_prod", placeholder="e.g. Cold Drinks, Special Item")
+            
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
             amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=1.0, format="%.2f")
             
             submit_sale = st.form_submit_button("Save Sale to Google Sheets")
             if submit_sale:
+                final_prod = other_product.strip() if product_sel == "Other" and other_product.strip() else product_sel
                 final_amt = float(amount) if amount is not None else 0.0
-                if product.strip():
+                
+                if final_prod:
                     df_sales = get_sheet_data("sales", SALES_COLS)
                     new_id = 1 if df_sales.empty else int(pd.to_numeric(df_sales['id'], errors='coerce').fillna(0).max() + 1)
                     new_row = pd.DataFrame([{
                         "id": new_id,
                         "entry_date": str(s_date),
                         "counter_type": counter,
-                        "product_name": product.strip(),
+                        "product_name": final_prod,
                         "quantity": int(quantity),
                         "amount": float(final_amt),
                         "created_by": current_user_tag
@@ -342,7 +347,7 @@ if choice == "📝 Daily Entry":
                     df_sales = pd.concat([df_sales, new_row], ignore_index=True)
                     update_sheet_data("sales", df_sales)
                     update_user_heartbeat(st.session_state.username)
-                    st.success(f"✅ Sale of Rs. {final_amt:,.2f} recorded by {current_user_tag}!")
+                    st.success(f"✅ Sale of Rs. {final_amt:,.2f} ({final_prod}) recorded by {current_user_tag}!")
                     st.rerun()
                 else:
                     st.error("Please enter a valid product name.")
@@ -608,14 +613,22 @@ elif choice == "📊 Reports & Analytics":
                             counters = ["Inside Counter / Dining", "Outside Stall"]
                             es_c_idx = counters.index(row_s['counter_type']) if row_s['counter_type'] in counters else 0
                             es_counter = st.selectbox("Counter", counters, index=es_c_idx, key="es_c")
-                            es_prod = st.text_input("Product Name", value=str(row_s['product_name']), key="es_p")
+                            
+                            # Edit Product Dropdown
+                            curr_prod = str(row_s['product_name'])
+                            prod_idx = PRODUCT_OPTIONS.index(curr_prod) if curr_prod in PRODUCT_OPTIONS else 2
+                            e_prod_sel = st.selectbox("Product Category", PRODUCT_OPTIONS, index=prod_idx, key="edit_prod_sel")
+                            e_other_val = curr_prod if prod_idx == 2 else ""
+                            e_other_prod = st.text_input("Specify if 'Other'", value=e_other_val, key="edit_other_prod")
+                            
                             es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['quantity']), step=1, key="es_q")
                             es_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_s['amount']), step=1.0, format="%.2f", key="es_a")
                             
                             if st.form_submit_button("Update Sale Record"):
+                                final_edit_prod = e_other_prod.strip() if e_prod_sel == "Other" and e_other_prod.strip() else e_prod_sel
                                 idx = df_sales_raw[df_sales_raw['id'] == edit_sale_id].index[0]
                                 df_sales_raw.loc[idx, ['entry_date', 'counter_type', 'product_name', 'quantity', 'amount', 'created_by']] = [
-                                    str(es_date), es_counter, es_prod.strip(), int(es_qty), float(es_amt), current_user_tag
+                                    str(es_date), es_counter, final_edit_prod, int(es_qty), float(es_amt), current_user_tag
                                 ]
                                 df_to_save = df_sales_raw.drop(columns=['date_parsed'], errors='ignore')
                                 update_sheet_data("sales", df_to_save)
@@ -667,7 +680,7 @@ elif choice == "📊 Reports & Analytics":
                                 
                     with e_act2:
                         st.markdown("##### 🗑️ Delete Expense Entry")
-                        del_exp_id = st.selectbox("Select Expense ID to Delete", df_exp['id'].tolist(), key="del_e_sel")
+                        del_exp_id = st.selectbox("Select Expense ID to Delete", df_exp['id'].tolist(), key="del_exp_sel")
                         if st.button("Delete Expense Record", type="primary", key="btn_del_exp"):
                             confirm_delete_exp_dialog(del_exp_id)
             else:
