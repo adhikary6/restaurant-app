@@ -40,6 +40,31 @@ INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock
 ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
 PRODUCT_OPTIONS = ["Total Food", "Water & Cold Drinks", "Other"]
 
+# Updated Expense Categories
+EXPENSE_CATEGORIES = [
+    "Chicken",
+    "Fish",
+    "Green Vegetables",
+    "Grocery & Spices",
+    "Water Bottle",
+    "Cold Drinks",
+    "Gas Cylinder",
+    "Rent & Utility Bill",
+    "Staff Salary",
+    "Staff Advance",
+    "Plates & Cutlery",
+    "Petty Cash",
+    "Miscellaneous"
+]
+
+TRACKED_ITEMS = [
+    "Egg (পিস)", 
+    "Water Bottle 1L", 
+    "Water Bottle 500 ml", 
+    "Campa Rs. 20", 
+    "Campa Rs. 10"
+]
+
 # -------------------------------------------------------------
 # Authentication Flow
 # -------------------------------------------------------------
@@ -278,23 +303,6 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Logout", use_container_width=True):
     logout()
 
-PARTNERS_LIST = ["Abhijit", "Jit", "Debasis", "Sumit"]
-EXPENSE_CATEGORIES = [
-    "Raw Materials (Chicken, Fish, Eggs, Veg)", 
-    "Grocery & Spices", 
-    "Rent & Utility Bills", 
-    "Staff Salary & Daily Allowance", 
-    "Transportation & Marketing",
-    "Other Miscellaneous Expenses"
-]
-TRACKED_ITEMS = [
-    "Egg (পিস)", 
-    "Water Bottle 1L", 
-    "Water Bottle 500 ml", 
-    "Campa Rs. 20", 
-    "Campa Rs. 10"
-]
-
 def parse_db_date(val):
     if isinstance(val, date):
         return val
@@ -357,7 +365,7 @@ if choice == "📝 Daily Entry":
         with st.form("expense_form", clear_on_submit=True):
             e_date = st.date_input("Date", value=date.today(), key="e_date")
             category = st.selectbox("Expense Category", EXPENSE_CATEGORIES)
-            particulars = st.text_input("Particulars / Details (e.g. Chicken, Grocery, Gas)")
+            particulars = st.text_input("Particulars / Details (e.g. 5kg Chicken, Rice, Cylinder refill)")
             e_amount = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=1.0, format="%.2f")
             
             submit_exp = st.form_submit_button("Save Expense to Google Sheets")
@@ -377,7 +385,7 @@ if choice == "📝 Daily Entry":
                     df_exp = pd.concat([df_exp, new_row], ignore_index=True)
                     update_sheet_data("expenses", df_exp)
                     update_user_heartbeat(st.session_state.username)
-                    st.success(f"✅ Expense of Rs. {final_e_amt:,.2f} recorded by {current_user_tag}!")
+                    st.success(f"✅ Expense of Rs. {final_e_amt:,.2f} ({category}) recorded by {current_user_tag}!")
                     st.rerun()
                 else:
                     st.error("Please enter particulars details.")
@@ -614,7 +622,6 @@ elif choice == "📊 Reports & Analytics":
                             es_c_idx = counters.index(row_s['counter_type']) if row_s['counter_type'] in counters else 0
                             es_counter = st.selectbox("Counter", counters, index=es_c_idx, key="es_c")
                             
-                            # Edit Product Dropdown
                             curr_prod = str(row_s['product_name'])
                             prod_idx = PRODUCT_OPTIONS.index(curr_prod) if curr_prod in PRODUCT_OPTIONS else 2
                             e_prod_sel = st.selectbox("Product Category", PRODUCT_OPTIONS, index=prod_idx, key="edit_prod_sel")
@@ -662,7 +669,8 @@ elif choice == "📊 Reports & Analytics":
                         
                         with st.form("edit_expense_form"):
                             ee_date = st.date_input("Date", value=parse_db_date(row_e['entry_date']), key="ee_d")
-                            ee_cat_idx = EXPENSE_CATEGORIES.index(row_e['category']) if row_e['category'] in EXPENSE_CATEGORIES else 0
+                            curr_e_cat = row_e['category']
+                            ee_cat_idx = EXPENSE_CATEGORIES.index(curr_e_cat) if curr_e_cat in EXPENSE_CATEGORIES else 0
                             ee_cat = st.selectbox("Expense Category", EXPENSE_CATEGORIES, index=ee_cat_idx, key="ee_c")
                             ee_part = st.text_input("Particulars / Details", value=str(row_e['particulars']), key="ee_p")
                             ee_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_e['amount']), step=1.0, format="%.2f", key="ee_a")
