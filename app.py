@@ -7,6 +7,36 @@ from streamlit_gsheets import GSheetsConnection
 # MUST be the first Streamlit command
 st.set_page_config(page_title="Restaurant Management Ledger", layout="wide")
 
+# JavaScript: Focus এ অটোমেটিক ০ বা ০.০০ মুছে দেওয়া এবং Blurring এ কারেক্ট ডেসিমাল ফরম্যাট করা
+st.markdown("""
+<script>
+const setupSmartInputs = () => {
+    const inputs = window.parent.document.querySelectorAll('input[data-testid="stNumberInput-Input"]');
+    inputs.forEach(input => {
+        if (!input.dataset.listenerAttached) {
+            input.dataset.listenerAttached = "true";
+            
+            input.addEventListener('focus', function() {
+                if (this.value === "0.00" || this.value === "0" || this.value === "0.0") {
+                    this.value = "";
+                }
+            });
+
+            input.addEventListener('blur', function() {
+                if (this.value.trim() === "") {
+                    this.value = "0.00";
+                }
+            });
+        }
+    });
+};
+
+const observer = new MutationObserver(setupSmartInputs);
+observer.observe(window.parent.document.body, { childList: true, subtree: true });
+setupSmartInputs();
+</script>
+""", unsafe_allow_html=True)
+
 # -------------------------------------------------------------
 # Google Sheets Connection Setup
 # -------------------------------------------------------------
@@ -26,7 +56,6 @@ def get_sheet_data(worksheet_name, expected_cols):
         return pd.DataFrame(columns=expected_cols)
 
 def update_sheet_data(worksheet_name, df):
-    # Convert all columns to standard types to prevent Google Sheets casting errors
     df_clean = df.copy()
     conn.update(worksheet=worksheet_name, data=df_clean)
 
@@ -83,6 +112,73 @@ if not st.session_state.logged_in:
 is_admin = (st.session_state.role == "admin")
 
 # -------------------------------------------------------------
+# Delete Confirmation Dialogs (Modal Popup)
+# -------------------------------------------------------------
+@st.dialog("⚠️ Confirm Deletion")
+def confirm_delete_sale_dialog(del_id):
+    st.write(f"Are you sure you want to permanently delete **Sale Record ID: {del_id}**?")
+    st.caption("This action cannot be undone.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Yes, Delete", type="primary", use_container_width=True):
+            df_sales_raw = get_sheet_data("sales", SALES_COLS)
+            df_sales_raw = df_sales_raw[df_sales_raw['id'] != del_id]
+            update_sheet_data("sales", df_sales_raw)
+            st.success("Record deleted successfully!")
+            st.rerun()
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+
+@st.dialog("⚠️ Confirm Deletion")
+def confirm_delete_exp_dialog(del_id):
+    st.write(f"Are you sure you want to permanently delete **Expense Record ID: {del_id}**?")
+    st.caption("This action cannot be undone.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Yes, Delete", type="primary", use_container_width=True):
+            df_exp_raw = get_sheet_data("expenses", EXPENSES_COLS)
+            df_exp_raw = df_exp_raw[df_exp_raw['id'] != del_id]
+            update_sheet_data("expenses", df_exp_raw)
+            st.success("Record deleted successfully!")
+            st.rerun()
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+
+@st.dialog("⚠️ Confirm Deletion")
+def confirm_delete_stock_dialog(del_id):
+    st.write(f"Are you sure you want to permanently delete **Stock Record ID: {del_id}**?")
+    st.caption("This action cannot be undone.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Yes, Delete", type="primary", use_container_width=True):
+            df_stock = get_sheet_data("inventory_log", INVENTORY_COLS)
+            df_stock = df_stock[df_stock['id'] != del_id]
+            update_sheet_data("inventory_log", df_stock)
+            st.success("Record deleted successfully!")
+            st.rerun()
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+
+@st.dialog("⚠️ Confirm Deletion")
+def confirm_delete_cap_dialog(del_id):
+    st.write(f"Are you sure you want to permanently delete **Capital Record ID: {del_id}**?")
+    st.caption("This action cannot be undone.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Yes, Delete", type="primary", use_container_width=True):
+            df_cap = get_sheet_data("capital", CAPITAL_COLS)
+            df_cap = df_cap[df_cap['id'] != del_id]
+            update_sheet_data("capital", df_cap)
+            st.success("Record deleted successfully!")
+            st.rerun()
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+
+# -------------------------------------------------------------
 # Main Application UI
 # -------------------------------------------------------------
 st.title("🍽️ Restaurant & Counter - Cloud Accounts Ledger")
@@ -100,7 +196,6 @@ with st.sidebar.expander("🔑 Change My Password"):
         
         if update_p_btn:
             df_users = get_sheet_data("users", USERS_COLS)
-            # Ensure all columns are treated as string/object dtype
             df_users = df_users.astype({"username": str, "password": str, "role": str})
             df_users['username_clean'] = df_users['username'].str.strip().str.lower()
             df_users['password_clean'] = df_users['password'].str.replace(r'\.0$', '', regex=True).str.strip()
@@ -116,7 +211,6 @@ with st.sidebar.expander("🔑 Change My Password"):
                 elif new_p.strip() != conf_p.strip():
                     st.error("New passwords do not match.")
                 else:
-                    # Update password cleanly
                     df_users_save = df_users[['username', 'password', 'role']].copy()
                     df_users_save.loc[user_idx[0], 'password'] = str(new_p.strip())
                     update_sheet_data("users", df_users_save)
@@ -159,7 +253,7 @@ def parse_db_date(val):
         return date.today()
 
 # -------------------------------------------------------------
-# 1. Daily Entry Section (Sales & Expenses) - Admin Only
+# 1. Daily Entry Section
 # -------------------------------------------------------------
 if choice == "Daily Entry":
     if not is_admin:
@@ -176,7 +270,7 @@ if choice == "Daily Entry":
             counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
             product = st.text_input("Product Name (e.g. Total Sale, Chicken Pakoda, Water)")
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
-            amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=0.0, step=10.0)
+            amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=0.0, step=1.0, format="%.2f")
             
             submit_sale = st.form_submit_button("Save Sale to Google Sheets")
             if submit_sale:
@@ -204,7 +298,7 @@ if choice == "Daily Entry":
             e_date = st.date_input("Date", value=date.today(), key="e_date")
             category = st.selectbox("Expense Category", EXPENSE_CATEGORIES)
             particulars = st.text_input("Particulars / Details (e.g. Chicken, Grocery, Gas)")
-            e_amount = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=0.0, step=10.0)
+            e_amount = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=0.0, step=1.0, format="%.2f")
             
             submit_exp = st.form_submit_button("Save Expense to Google Sheets")
             if submit_exp:
@@ -329,11 +423,7 @@ elif choice == "Daily Stock Register":
                         st.markdown("##### 🗑️ Delete Stock Entry")
                         del_stock_id = st.selectbox("Select Stock ID to Delete", df_stock_filtered['id'].tolist(), key="del_stk_sel")
                         if st.button("Delete Stock Record", type="primary"):
-                            df_stock = df_stock[df_stock['id'] != del_stock_id]
-                            df_stock_to_save = df_stock.drop(columns=['entry_date_parsed'], errors='ignore')
-                            update_sheet_data("inventory_log", df_stock_to_save)
-                            st.success("Stock Record deleted from Google Sheets!")
-                            st.rerun()
+                            confirm_delete_stock_dialog(del_stock_id)
             else:
                 st.info("No stock records found for this period.")
         else:
@@ -455,7 +545,7 @@ elif choice == "Reports & Analytics":
                             es_counter = st.selectbox("Counter", counters, index=es_c_idx, key="es_c")
                             es_prod = st.text_input("Product Name", value=str(row_s['product_name']), key="es_p")
                             es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['quantity']), step=1, key="es_q")
-                            es_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_s['amount']), step=10.0, key="es_a")
+                            es_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_s['amount']), step=1.0, format="%.2f", key="es_a")
                             
                             if st.form_submit_button("Update Sale Record"):
                                 idx = df_sales_raw[df_sales_raw['id'] == edit_sale_id].index[0]
@@ -471,11 +561,7 @@ elif choice == "Reports & Analytics":
                         st.markdown("##### 🗑️ Delete Sale Entry")
                         del_sale_id = st.selectbox("Select Sale ID to Delete", df_sales['id'].tolist(), key="del_s_sel")
                         if st.button("Delete Sale Record", type="primary", key="btn_del_sale"):
-                            df_sales_raw = df_sales_raw[df_sales_raw['id'] != del_sale_id]
-                            df_to_save = df_sales_raw.drop(columns=['date_parsed'], errors='ignore')
-                            update_sheet_data("sales", df_to_save)
-                            st.success("Sale record deleted from Google Sheets!")
-                            st.rerun()
+                            confirm_delete_sale_dialog(del_sale_id)
             else:
                 st.info("No sales records found for this period.")
                 
@@ -500,7 +586,7 @@ elif choice == "Reports & Analytics":
                             ee_cat_idx = EXPENSE_CATEGORIES.index(row_e['category']) if row_e['category'] in EXPENSE_CATEGORIES else 0
                             ee_cat = st.selectbox("Expense Category", EXPENSE_CATEGORIES, index=ee_cat_idx, key="ee_c")
                             ee_part = st.text_input("Particulars / Details", value=str(row_e['particulars']), key="ee_p")
-                            ee_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_e['amount']), step=10.0, key="ee_a")
+                            ee_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_e['amount']), step=1.0, format="%.2f", key="ee_a")
                             
                             if st.form_submit_button("Update Expense Record"):
                                 idx = df_exp_raw[df_exp_raw['id'] == edit_exp_id].index[0]
@@ -516,11 +602,7 @@ elif choice == "Reports & Analytics":
                         st.markdown("##### 🗑️ Delete Expense Entry")
                         del_exp_id = st.selectbox("Select Expense ID to Delete", df_exp['id'].tolist(), key="del_e_sel")
                         if st.button("Delete Expense Record", type="primary", key="btn_del_exp"):
-                            df_exp_raw = df_exp_raw[df_exp_raw['id'] != del_exp_id]
-                            df_to_save = df_exp_raw.drop(columns=['date_parsed'], errors='ignore')
-                            update_sheet_data("expenses", df_to_save)
-                            st.success("Expense record deleted from Google Sheets!")
-                            st.rerun()
+                            confirm_delete_exp_dialog(del_exp_id)
             else:
                 st.info("No expense records found for this period.")
     else:
@@ -540,7 +622,7 @@ elif choice == "Capital Management":
             with st.form("capital_form", clear_on_submit=True):
                 c_date = st.date_input("Date", value=date.today())
                 partner = st.selectbox("Partner Name", PARTNERS_LIST)
-                cap_amount = st.number_input("Amount (Rs.)", min_value=0.0, value=0.0, step=500.0)
+                cap_amount = st.number_input("Amount (Rs.)", min_value=0.0, value=0.0, step=100.0, format="%.2f")
                 
                 if st.form_submit_button("Record Capital"):
                     df_cap = get_sheet_data("capital", CAPITAL_COLS)
@@ -590,7 +672,7 @@ elif choice == "Capital Management":
                         ec_date = st.date_input("Date", value=parse_db_date(row_cap['entry_date']), key="ec_d")
                         ec_p_idx = PARTNERS_LIST.index(row_cap['partner_name']) if row_cap['partner_name'] in PARTNERS_LIST else 0
                         ec_partner = st.selectbox("Partner Name", PARTNERS_LIST, index=ec_p_idx, key="ec_p")
-                        ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['amount']), step=500.0, key="ec_a")
+                        ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['amount']), step=100.0, format="%.2f", key="ec_a")
                         
                         if st.form_submit_button("Update Capital Record"):
                             idx = df_cap[df_cap['id'] == edit_cap_id].index[0]
@@ -605,9 +687,6 @@ elif choice == "Capital Management":
                     st.markdown("##### 🗑️ Delete Capital Entry")
                     del_id = st.selectbox("Select Capital ID to Delete", df_cap['id'].tolist(), key="del_cap_sel")
                     if st.button("Delete Capital Record", type="primary", key="btn_del_cap"):
-                        df_cap = df_cap[df_cap['id'] != del_id]
-                        update_sheet_data("capital", df_cap)
-                        st.success("Capital Record deleted from Google Sheets!")
-                        st.rerun()
+                        confirm_delete_cap_dialog(del_id)
         else:
             st.info("No capital contributions found in Google Sheet.")
