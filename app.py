@@ -56,6 +56,7 @@ div[data-testid="stButton"] button:hover {
     color: #0f172a !important;
 }
 
+/* Glowing Neon Active State */
 div[data-testid="stButton"] button[kind="primary"] {
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
     color: #38bdf8 !important;
@@ -215,7 +216,7 @@ def get_user_initials(uname):
 current_user_tag = get_user_initials(st.session_state.username)
 
 # -------------------------------------------------------------
-# Modals: Edit & Delete Dialogs
+# Modals: Edit & Delete Dialogs (Auto-filled with old data)
 # -------------------------------------------------------------
 @st.dialog("✏️ Edit Sale Record")
 def edit_sale_dialog(del_id):
@@ -241,7 +242,7 @@ def edit_sale_dialog(del_id):
         es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['quantity']), step=1)
         es_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_s['amount']), step=1.0, format="%.2f")
         
-        if st.form_submit_button("Update Record", type="primary", use_container_width=True):
+        if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
             final_edit_prod = e_other_prod.strip() if e_prod_sel == "Other" and e_other_prod.strip() else e_prod_sel
             idx = df_sales_raw[df_sales_raw['id'] == del_id].index[0]
             df_sales_raw.loc[idx, ['entry_date', 'counter_type', 'product_name', 'quantity', 'amount', 'created_by']] = [
@@ -249,12 +250,12 @@ def edit_sale_dialog(del_id):
             ]
             update_sheet_data("sales", df_sales_raw)
             update_user_heartbeat(st.session_state.username)
-            st.success("Record updated successfully!")
+            st.success("✅ Sale Record updated successfully!")
             st.rerun()
 
 @st.dialog("⚠️ Confirm Deletion")
 def confirm_delete_sale_dialog(del_id):
-    st.write(f"Are you sure you want to permanently delete **Sale Record ID: {del_id}**?")
+    st.write("Are you sure you want to permanently delete this sale record?")
     st.caption("This action cannot be undone.")
     col1, col2 = st.columns(2)
     with col1:
@@ -286,19 +287,19 @@ def edit_expense_dialog(del_id):
         ee_part = st.text_input("Particulars / Details", value=str(row_e['particulars']))
         ee_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_e['amount']), step=1.0, format="%.2f")
         
-        if st.form_submit_button("Update Record", type="primary", use_container_width=True):
+        if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
             idx = df_exp_raw[df_exp_raw['id'] == del_id].index[0]
             df_exp_raw.loc[idx, ['entry_date', 'category', 'particulars', 'amount', 'created_by']] = [
                 str(ee_date), ee_cat, ee_part.strip(), float(ee_amt), current_user_tag
             ]
             update_sheet_data("expenses", df_exp_raw)
             update_user_heartbeat(st.session_state.username)
-            st.success("Record updated successfully!")
+            st.success("✅ Expense Record updated successfully!")
             st.rerun()
 
 @st.dialog("⚠️ Confirm Deletion")
 def confirm_delete_exp_dialog(del_id):
-    st.write(f"Are you sure you want to permanently delete **Expense Record ID: {del_id}**?")
+    st.write("Are you sure you want to permanently delete this expense record?")
     st.caption("This action cannot be undone.")
     col1, col2 = st.columns(2)
     with col1:
@@ -333,19 +334,19 @@ def edit_stock_dialog(del_id):
         e_tot = e_op + e_add
         e_sold = max(0, e_tot - e_cl)
         
-        if st.form_submit_button("Update Stock Record", type="primary", use_container_width=True):
+        if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
             idx = df_stock[df_stock['id'] == del_id].index[0]
             df_stock.loc[idx, ['entry_date', 'item_name', 'opening_stock', 'added_stock', 'closing_stock', 'sold_quantity', 'created_by']] = [
                 str(e_stk_date), e_stk_item, int(e_op), int(e_add), int(e_cl), int(e_sold), current_user_tag
             ]
             update_sheet_data("inventory_log", df_stock)
             update_user_heartbeat(st.session_state.username)
-            st.success("Stock Record updated!")
+            st.success("✅ Stock Record updated successfully!")
             st.rerun()
 
 @st.dialog("⚠️ Confirm Deletion")
 def confirm_delete_stock_dialog(del_id):
-    st.write(f"Are you sure you want to permanently delete **Stock Record ID: {del_id}**?")
+    st.write("Are you sure you want to permanently delete this stock record?")
     st.caption("This action cannot be undone.")
     col1, col2 = st.columns(2)
     with col1:
@@ -375,19 +376,19 @@ def edit_capital_dialog(del_id):
         ec_partner = st.selectbox("Partner Name", PARTNERS_LIST, index=ec_p_idx)
         ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['amount']), step=100.0, format="%.2f")
         
-        if st.form_submit_button("Update Capital", type="primary", use_container_width=True):
+        if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
             idx = df_cap[df_cap['id'] == del_id].index[0]
             df_cap.loc[idx, ['entry_date', 'partner_name', 'amount', 'created_by']] = [
                 str(ec_date), ec_partner, float(ec_amt), current_user_tag
             ]
             update_sheet_data("capital", df_cap)
             update_user_heartbeat(st.session_state.username)
-            st.success("Capital Record updated!")
+            st.success("✅ Capital Record updated successfully!")
             st.rerun()
 
 @st.dialog("⚠️ Confirm Deletion")
 def confirm_delete_cap_dialog(del_id):
-    st.write(f"Are you sure you want to permanently delete **Capital Record ID: {del_id}**?")
+    st.write("Are you sure you want to permanently delete this capital record?")
     st.caption("This action cannot be undone.")
     col1, col2 = st.columns(2)
     with col1:
@@ -651,51 +652,73 @@ if choice == "📊 Reports & Analytics":
         
         with tab1:
             if not df_sales.empty:
-                df_sales_disp = df_sales.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
+                df_sales_disp = df_sales.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True).copy()
                 df_sales_disp['amount_fmt'] = df_sales_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
                 
-                st.dataframe(df_sales_disp[['id', 'entry_date', 'counter_type', 'product_name', 'quantity', 'amount_fmt', 'created_by']].rename(
-                    columns={'id': 'ID', 'entry_date': 'Date', 'counter_type': 'Counter', 'product_name': 'Product', 'quantity': 'Qty', 'amount_fmt': 'Amount', 'created_by': 'By'}
-                ), use_container_width=True)
+                # Replace Database ID with Sequential Sl No
+                df_sales_disp['Sl No'] = range(1, len(df_sales_disp) + 1)
+                
+                table_disp_s = df_sales_disp[['Sl No', 'entry_date', 'counter_type', 'product_name', 'quantity', 'amount_fmt', 'created_by']].rename(
+                    columns={'entry_date': 'Date', 'counter_type': 'Counter', 'product_name': 'Product', 'quantity': 'Qty', 'amount_fmt': 'Amount', 'created_by': 'By'}
+                )
+                
+                st.caption("👆 **Tip:** Tap on any row to select it, then tap Edit or Delete below.")
+                event_s = st.dataframe(table_disp_s, use_container_width=True, on_select="rerun", selection_mode="single-row", key="table_sales_sel", hide_index=True)
                 
                 if is_admin:
-                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                    act_col_s1, act_col_s2, act_col_s3 = st.columns([1.5, 1, 1])
-                    with act_col_s1:
-                        target_sale_id = st.selectbox("Select Sale ID to Action", df_sales_disp['id'].tolist(), key="sel_s_act")
-                    with act_col_s2:
-                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("✏️ Edit Sale", key="btn_ed_s", use_container_width=True):
-                            edit_sale_dialog(target_sale_id)
-                    with act_col_s3:
-                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("🗑️ Delete Sale", key="btn_dl_s", use_container_width=True):
-                            confirm_delete_sale_dialog(target_sale_id)
+                    selected_rows_s = event_s.selection.rows if hasattr(event_s, 'selection') else []
+                    sel_s_id = df_sales_disp.iloc[selected_rows_s[0]]['id'] if selected_rows_s else None
+                    
+                    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+                    btn_c1, btn_c2 = st.columns(2)
+                    with btn_c1:
+                        if st.button("✏️ Edit Selected Sale", use_container_width=True, key="btn_edit_s_tap"):
+                            if sel_s_id is not None:
+                                edit_sale_dialog(sel_s_id)
+                            else:
+                                st.warning("Please tap on a row in the table above first.")
+                    with btn_c2:
+                        if st.button("🗑️ Delete Selected Sale", use_container_width=True, key="btn_del_s_tap"):
+                            if sel_s_id is not None:
+                                confirm_delete_sale_dialog(sel_s_id)
+                            else:
+                                st.warning("Please tap on a row in the table above first.")
             else:
                 st.info("No sales records found for this period.")
                 
         with tab2:
             if not df_exp.empty:
-                df_exp_disp = df_exp.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
+                df_exp_disp = df_exp.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True).copy()
                 df_exp_disp['amount_fmt'] = df_exp_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
                 
-                st.dataframe(df_exp_disp[['id', 'entry_date', 'category', 'particulars', 'amount_fmt', 'created_by']].rename(
-                    columns={'id': 'ID', 'entry_date': 'Date', 'category': 'Category', 'particulars': 'Particulars', 'amount_fmt': 'Amount', 'created_by': 'By'}
-                ), use_container_width=True)
+                # Replace Database ID with Sequential Sl No
+                df_exp_disp['Sl No'] = range(1, len(df_exp_disp) + 1)
+                
+                table_disp_e = df_exp_disp[['Sl No', 'entry_date', 'category', 'particulars', 'amount_fmt', 'created_by']].rename(
+                    columns={'entry_date': 'Date', 'category': 'Category', 'particulars': 'Particulars', 'amount_fmt': 'Amount', 'created_by': 'By'}
+                )
+                
+                st.caption("👆 **Tip:** Tap on any row to select it, then tap Edit or Delete below.")
+                event_e = st.dataframe(table_disp_e, use_container_width=True, on_select="rerun", selection_mode="single-row", key="table_exp_sel", hide_index=True)
                 
                 if is_admin:
-                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                    act_col_e1, act_col_e2, act_col_e3 = st.columns([1.5, 1, 1])
-                    with act_col_e1:
-                        target_exp_id = st.selectbox("Select Expense ID to Action", df_exp_disp['id'].tolist(), key="sel_e_act")
-                    with act_col_e2:
-                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("✏️ Edit Expense", key="btn_ed_e", use_container_width=True):
-                            edit_expense_dialog(target_exp_id)
-                    with act_col_e3:
-                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("🗑️ Delete Expense", key="btn_dl_e", use_container_width=True):
-                            confirm_delete_exp_dialog(target_exp_id)
+                    selected_rows_e = event_e.selection.rows if hasattr(event_e, 'selection') else []
+                    sel_e_id = df_exp_disp.iloc[selected_rows_e[0]]['id'] if selected_rows_e else None
+                    
+                    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+                    btn_c1, btn_c2 = st.columns(2)
+                    with btn_c1:
+                        if st.button("✏️ Edit Selected Expense", use_container_width=True, key="btn_edit_e_tap"):
+                            if sel_e_id is not None:
+                                edit_expense_dialog(sel_e_id)
+                            else:
+                                st.warning("Please tap on a row in the table above first.")
+                    with btn_c2:
+                        if st.button("🗑️ Delete Selected Expense", use_container_width=True, key="btn_del_e_tap"):
+                            if sel_e_id is not None:
+                                confirm_delete_exp_dialog(sel_e_id)
+                            else:
+                                st.warning("Please tap on a row in the table above first.")
             else:
                 st.info("No expense records found for this period.")
     else:
@@ -837,36 +860,47 @@ elif choice == "📦 Daily Stock Register":
         if not df_stock.empty:
             df_stock['entry_date_parsed'] = pd.to_datetime(df_stock['entry_date'], errors='coerce').dt.date
             df_stock['created_by'] = df_stock['created_by'].fillna("-")
-            df_stock_filtered = df_stock[(df_stock['entry_date_parsed'] >= stk_start) & (df_stock['entry_date_parsed'] <= stk_end)].copy()
-            df_stock_filtered = df_stock_filtered.sort_values(by=['entry_date', 'id'], ascending=[False, False])
+            df_stock_filtered = df_stock[(df_stock['entry_date_parsed'] >= stk_start) & (df_stock['entry_date_parsed'] <= stk_end)].reset_index(drop=True).copy()
+            df_stock_filtered = df_stock_filtered.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True)
             
             if not df_stock_filtered.empty:
+                # Replace Database ID with Sequential Sl No
+                df_stock_filtered['Sl No'] = range(1, len(df_stock_filtered) + 1)
+                
                 display_cols = {
-                    'id': 'ID', 'entry_date': 'Date', 'item_name': 'Item',
+                    'Sl No': 'Sl No', 'entry_date': 'Date', 'item_name': 'Item',
                     'opening_stock': 'Opening', 'added_stock': 'Added',
                     'closing_stock': 'Closing', 'sold_quantity': 'Sold (Pcs)',
                     'created_by': 'By'
                 }
-                st.dataframe(df_stock_filtered[list(display_cols.keys())].rename(columns=display_cols), use_container_width=True)
                 
+                st.caption("👆 **Tip:** Tap on any row to select it, then tap Edit or Delete below.")
+                event_stk = st.dataframe(df_stock_filtered[list(display_cols.keys())].rename(columns=display_cols), use_container_width=True, on_select="rerun", selection_mode="single-row", key="table_stk_sel", hide_index=True)
+                
+                if is_admin:
+                    selected_rows_stk = event_stk.selection.rows if hasattr(event_stk, 'selection') else []
+                    sel_stk_id = df_stock_filtered.iloc[selected_rows_stk[0]]['id'] if selected_rows_stk else None
+                    
+                    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+                    btn_c1, btn_c2 = st.columns(2)
+                    with btn_c1:
+                        if st.button("✏️ Edit Selected Stock", use_container_width=True, key="btn_edit_stk_tap"):
+                            if sel_stk_id is not None:
+                                edit_stock_dialog(sel_stk_id)
+                            else:
+                                st.warning("Please tap on a row in the table above first.")
+                    with btn_c2:
+                        if st.button("🗑️ Delete Selected Stock", use_container_width=True, key="btn_del_stk_tap"):
+                            if sel_stk_id is not None:
+                                confirm_delete_stock_dialog(sel_stk_id)
+                            else:
+                                st.warning("Please tap on a row in the table above first.")
+                
+                st.markdown("---")
                 st.markdown("#### 📊 Total Quantity Sold in Period")
                 df_stock_filtered['sold_quantity'] = pd.to_numeric(df_stock_filtered['sold_quantity'], errors='coerce').fillna(0)
                 sold_sum = df_stock_filtered.groupby('item_name')['sold_quantity'].sum().reset_index()
                 st.dataframe(sold_sum.rename(columns={'item_name': 'Item', 'sold_quantity': 'Total Sold (Pcs)'}), use_container_width=True)
-                
-                if is_admin:
-                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                    stk_act1, stk_act2, stk_act3 = st.columns([1.5, 1, 1])
-                    with stk_act1:
-                        target_stk_id = st.selectbox("Select Stock ID to Action", df_stock_filtered['id'].tolist(), key="sel_stk_act")
-                    with stk_act2:
-                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("✏️ Edit Stock", key="btn_ed_stk", use_container_width=True):
-                            edit_stock_dialog(target_stk_id)
-                    with stk_act3:
-                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                        if st.button("🗑️ Delete Stock", key="btn_dl_stk", use_container_width=True):
-                            confirm_delete_stock_dialog(target_stk_id)
             else:
                 st.info("No stock records found for this period.")
         else:
@@ -922,24 +956,36 @@ elif choice == "💼 Capital Management":
             st.info(f"**Total Capital Invested:** Rs. {total_invested:,.2f}")
             
             st.markdown("#### Capital Contribution History")
-            df_cap_disp = df_cap.sort_values(by=['entry_date', 'id'], ascending=[False, False]).copy()
-            df_cap_disp['amount'] = df_cap_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
-            st.dataframe(df_cap_disp[['id', 'entry_date', 'partner_name', 'amount', 'created_by']].rename(
-                columns={'id': 'ID', 'entry_date': 'Date', 'partner_name': 'Partner', 'amount': 'Amount', 'created_by': 'By'}
-            ), use_container_width=True)
+            df_cap_disp = df_cap.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True).copy()
+            df_cap_disp['amount_fmt'] = df_cap_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+            
+            # Replace Database ID with Sequential Sl No
+            df_cap_disp['Sl No'] = range(1, len(df_cap_disp) + 1)
+            
+            table_disp_cap = df_cap_disp[['Sl No', 'entry_date', 'partner_name', 'amount_fmt', 'created_by']].rename(
+                columns={'entry_date': 'Date', 'partner_name': 'Partner', 'amount_fmt': 'Amount', 'created_by': 'By'}
+            )
+            
+            st.caption("👆 **Tip:** Tap on any row to select it, then tap Edit or Delete below.")
+            event_cap = st.dataframe(table_disp_cap, use_container_width=True, on_select="rerun", selection_mode="single-row", key="table_cap_sel", hide_index=True)
             
             if is_admin:
-                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                cap_act1, cap_act2, cap_act3 = st.columns([1.5, 1, 1])
-                with cap_act1:
-                    target_cap_id = st.selectbox("Select Capital ID to Action", df_cap_disp['id'].tolist(), key="sel_cap_act")
-                with cap_act2:
-                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                    if st.button("✏️ Edit Capital", key="btn_ed_cap", use_container_width=True):
-                        edit_capital_dialog(target_cap_id)
-                with cap_act3:
-                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                    if st.button("🗑️ Delete Capital", key="btn_dl_cap", use_container_width=True):
-                        confirm_delete_cap_dialog(target_cap_id)
+                selected_rows_cap = event_cap.selection.rows if hasattr(event_cap, 'selection') else []
+                sel_cap_id = df_cap_disp.iloc[selected_rows_cap[0]]['id'] if selected_rows_cap else None
+                
+                st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+                btn_c1, btn_c2 = st.columns(2)
+                with btn_c1:
+                    if st.button("✏️ Edit Selected Capital", use_container_width=True, key="btn_edit_cap_tap"):
+                        if sel_cap_id is not None:
+                            edit_capital_dialog(sel_cap_id)
+                        else:
+                            st.warning("Please tap on a row in the table above first.")
+                with btn_c2:
+                    if st.button("🗑️ Delete Selected Capital", use_container_width=True, key="btn_del_cap_tap"):
+                        if sel_cap_id is not None:
+                            confirm_delete_cap_dialog(sel_cap_id)
+                        else:
+                            st.warning("Please tap on a row in the table above first.")
         else:
             st.info("No capital contributions found in Google Sheet.")
