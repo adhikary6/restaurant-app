@@ -247,10 +247,7 @@ elif choice == "Daily Stock Register":
     st.subheader("📦 Daily Stock & Automated Sales Tracker")
     st.caption("Track stock movement: Daily Sold = (Opening + Added) - Closing")
     
-    if is_admin:
-        col_st1, col_st2 = st.columns([1.1, 1.9])
-    else:
-        col_st1, col_st2 = None, st.container()
+    col_st1, col_st2 = st.columns([1.1, 1.9]) if is_admin else (None, st.container())
     
     if is_admin:
         with col_st1:
@@ -258,27 +255,25 @@ elif choice == "Daily Stock Register":
             with st.form("stock_form", clear_on_submit=True):
                 stk_date = st.date_input("Date", value=date.today(), key="stk_date")
                 stk_item = st.selectbox("Select Item", TRACKED_ITEMS)
-                
                 op_stock = st.number_input("Opening Stock (Pcs)", min_value=0, value=0, step=1)
                 add_stock = st.number_input("Stock Added / Purchased Today (Pcs)", min_value=0, value=0, step=1)
                 cl_stock = st.number_input("Closing Stock at End of Day (Pcs)", min_value=0, value=0, step=1)
                 
                 total_available = op_stock + add_stock
                 calc_sold = max(0, total_available - cl_stock)
-                
                 st.info(f"💡 Calculated Daily Sold: **{calc_sold} Pcs**")
                 
                 submit_stock = st.form_submit_button("Save Stock Record")
                 if submit_stock:
                     if cl_stock > total_available:
-                        st.error(f"Closing stock ({cl_stock}) cannot be greater than Total Available ({total_available})!")
+                        st.error(f"Closing stock cannot be greater than Total Available ({total_available})!")
                     else:
                         c.execute("""
                             INSERT INTO inventory_log (entry_date, item_name, opening_stock, added_stock, closing_stock, sold_quantity)
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (stk_date, stk_item, op_stock, add_stock, cl_stock, calc_sold))
                         conn.commit()
-                        st.success(f"✅ Stock record for {stk_item} saved! ({calc_sold} pcs sold)")
+                        st.success(f"✅ Stock record saved! ({calc_sold} pcs sold)")
                         st.rerun()
 
     with (col_st2 if is_admin else col_st2):
@@ -307,7 +302,6 @@ elif choice == "Daily Stock Register":
             if is_admin:
                 st.markdown("---")
                 act_col1, act_col2 = st.columns(2)
-                
                 with act_col1:
                     st.markdown("##### ✏️ Edit Stock Entry")
                     edit_stock_id = st.selectbox("Select Stock ID to Edit", df_stock['ID'].tolist(), key="edit_stk_sel")
@@ -324,19 +318,15 @@ elif choice == "Daily Stock Register":
                         e_tot = e_op + e_add
                         e_sold = max(0, e_tot - e_cl)
                         
-                        update_stk_btn = st.form_submit_button("Update Stock Record")
-                        if update_stk_btn:
-                            if e_cl > e_tot:
-                                st.error(f"Closing stock ({e_cl}) cannot be greater than Total Available ({e_tot})!")
-                            else:
-                                c.execute("""
-                                    UPDATE inventory_log 
-                                    SET entry_date = ?, item_name = ?, opening_stock = ?, added_stock = ?, closing_stock = ?, sold_quantity = ?
-                                    WHERE id = ?
-                                """, (e_stk_date, e_stk_item, e_op, e_add, e_cl, e_sold, edit_stock_id))
-                                conn.commit()
-                                st.success(f"✅ Stock Record ID {edit_stock_id} updated successfully!")
-                                st.rerun()
+                        if st.form_submit_button("Update Stock Record"):
+                            c.execute("""
+                                UPDATE inventory_log 
+                                SET entry_date = ?, item_name = ?, opening_stock = ?, added_stock = ?, closing_stock = ?, sold_quantity = ?
+                                WHERE id = ?
+                            """, (e_stk_date, e_stk_item, e_op, e_add, e_cl, e_sold, edit_stock_id))
+                            conn.commit()
+                            st.success("✅ Stock Record updated successfully!")
+                            st.rerun()
 
                 with act_col2:
                     st.markdown("##### 🗑️ Delete Stock Entry")
@@ -344,7 +334,7 @@ elif choice == "Daily Stock Register":
                     if st.button("Delete Stock Record", type="primary", key="btn_del_stk"):
                         c.execute("DELETE FROM inventory_log WHERE id = ?", (del_stock_id,))
                         conn.commit()
-                        st.success(f"Stock Record ID {del_stock_id} deleted successfully!")
+                        st.success("Stock Record deleted successfully!")
                         st.rerun()
         else:
             st.info("No stock records found for the selected period.")
@@ -371,27 +361,22 @@ elif choice == "Reports & Analytics":
         total_exp = df_exp['Amount'].sum() if not df_exp.empty else 0.0
         net_profit = total_sale - total_exp
         
-        # --- Excel Generator ---
+        # Excel Generator
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            # Summary Sheet
             df_summary = pd.DataFrame({
                 "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss"],
                 "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit]
             })
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
-            
-            # Sales & Expenses
             df_sales.to_excel(writer, sheet_name='Sales Register', index=False)
             df_exp.to_excel(writer, sheet_name='Expense Register', index=False)
             df_stock_exp.to_excel(writer, sheet_name='Stock Register', index=False)
             df_cap_exp.to_excel(writer, sheet_name='Capital Register', index=False)
 
-        excel_data = excel_buffer.getvalue()
-        
         st.download_button(
             label="📥 Download Full Account Book (.xlsx)",
-            data=excel_data,
+            data=excel_buffer.getvalue(),
             file_name=f"Accounts_Report_{start_date}_to_{end_date}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
@@ -434,7 +419,6 @@ elif choice == "Reports & Analytics":
         tab1, tab2 = st.tabs(["Sales Breakdown", "Expense Breakdown"])
         
         with tab1:
-            st.markdown("#### Product-wise Sales Summary")
             if not df_sales.empty:
                 prod_summary = df_sales.groupby('Product').agg({'Qty': 'sum', 'Amount': 'sum'}).reset_index()
                 prod_summary_disp = prod_summary.copy()
@@ -449,7 +433,6 @@ elif choice == "Reports & Analytics":
                 if is_admin:
                     st.markdown("---")
                     s_act1, s_act2 = st.columns(2)
-                    
                     with s_act1:
                         st.markdown("##### ✏️ Edit Sale Entry")
                         edit_sale_id = st.selectbox("Select Sale ID to Edit", df_sales['ID'].tolist(), key="edit_s_sel")
@@ -464,8 +447,7 @@ elif choice == "Reports & Analytics":
                             es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['Qty']), step=1, key="es_q")
                             es_amt = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=float(row_s['Amount']), step=10.0, key="es_a")
                             
-                            update_sale_btn = st.form_submit_button("Update Sale Record")
-                            if update_sale_btn:
+                            if st.form_submit_button("Update Sale Record"):
                                 if es_prod.strip():
                                     c.execute("""
                                         UPDATE sales 
@@ -473,10 +455,8 @@ elif choice == "Reports & Analytics":
                                         WHERE id = ?
                                     """, (es_date, es_counter, es_prod.strip(), es_qty, es_amt, edit_sale_id))
                                     conn.commit()
-                                    st.success(f"✅ Sale Record ID {edit_sale_id} updated successfully!")
+                                    st.success("✅ Sale Record updated successfully!")
                                     st.rerun()
-                                else:
-                                    st.error("Product name cannot be empty.")
                                     
                     with s_act2:
                         st.markdown("##### 🗑️ Delete Sale Entry")
@@ -484,13 +464,12 @@ elif choice == "Reports & Analytics":
                         if st.button("Delete Sale Record", type="primary", key="btn_del_sale"):
                             c.execute("DELETE FROM sales WHERE id = ?", (del_sale_id,))
                             conn.commit()
-                            st.success(f"Sale record ID {del_sale_id} deleted successfully!")
+                            st.success("Sale record deleted successfully!")
                             st.rerun()
             else:
                 st.info("No sales records found for this period.")
                 
         with tab2:
-            st.markdown("#### Category-wise Expense Summary")
             if not df_exp.empty:
                 cat_summary = df_exp.groupby('Category').agg({'Amount': 'sum'}).reset_index()
                 cat_summary_disp = cat_summary.copy()
@@ -505,7 +484,6 @@ elif choice == "Reports & Analytics":
                 if is_admin:
                     st.markdown("---")
                     e_act1, e_act2 = st.columns(2)
-                    
                     with e_act1:
                         st.markdown("##### ✏️ Edit Expense Entry")
                         edit_exp_id = st.selectbox("Select Expense ID to Edit", df_exp['ID'].tolist(), key="edit_e_sel")
@@ -518,8 +496,7 @@ elif choice == "Reports & Analytics":
                             ee_part = st.text_input("Particulars / Details", value=str(row_e['Particulars']), key="ee_p")
                             ee_amt = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=float(row_e['Amount']), step=10.0, key="ee_a")
                             
-                            update_exp_btn = st.form_submit_button("Update Expense Record")
-                            if update_exp_btn:
+                            if st.form_submit_button("Update Expense Record"):
                                 if ee_part.strip():
                                     c.execute("""
                                         UPDATE expenses 
@@ -527,10 +504,8 @@ elif choice == "Reports & Analytics":
                                         WHERE id = ?
                                     """, (ee_date, ee_cat, ee_part.strip(), ee_amt, edit_exp_id))
                                     conn.commit()
-                                    st.success(f"✅ Expense Record ID {edit_exp_id} updated successfully!")
+                                    st.success("✅ Expense Record updated successfully!")
                                     st.rerun()
-                                else:
-                                    st.error("Particulars details cannot be empty.")
                                     
                     with e_act2:
                         st.markdown("##### 🗑️ Delete Expense Entry")
@@ -538,7 +513,7 @@ elif choice == "Reports & Analytics":
                         if st.button("Delete Expense Record", type="primary", key="btn_del_exp"):
                             c.execute("DELETE FROM expenses WHERE id = ?", (del_exp_id,))
                             conn.commit()
-                            st.success(f"Expense record ID {del_exp_id} deleted successfully!")
+                            st.success("Expense record deleted successfully!")
                             st.rerun()
             else:
                 st.info("No expense records found for this period.")
@@ -551,10 +526,7 @@ elif choice == "Reports & Analytics":
 elif choice == "Capital Management":
     st.subheader("💼 Partner Capital & Investment Ledger")
     
-    if is_admin:
-        col_c1, col_c2 = st.columns([1, 1.5])
-    else:
-        col_c1, col_c2 = None, st.container()
+    col_c1, col_c2 = st.columns([1, 1.5]) if is_admin else (None, st.container())
     
     if is_admin:
         with col_c1:
@@ -564,8 +536,7 @@ elif choice == "Capital Management":
                 partner = st.selectbox("Partner Name", PARTNERS_LIST)
                 cap_amount = st.number_input("Amount (Rs.)", min_value=0.0, value=0.0, step=500.0)
                 
-                submit_cap = st.form_submit_button("Record Capital")
-                if submit_cap:
+                if st.form_submit_button("Record Capital"):
                     c.execute("INSERT INTO capital (entry_date, partner_name, amount) VALUES (?, ?, ?)",
                               (c_date, partner, cap_amount))
                     conn.commit()
@@ -593,7 +564,6 @@ elif choice == "Capital Management":
             if is_admin:
                 st.markdown("---")
                 cap_act1, cap_act2 = st.columns(2)
-                
                 with cap_act1:
                     st.markdown("##### ✏️ Edit Capital Entry")
                     edit_cap_id = st.selectbox("Select Capital ID to Edit", df_cap_all['ID'].tolist(), key="edit_cap_sel")
@@ -605,15 +575,14 @@ elif choice == "Capital Management":
                         ec_partner = st.selectbox("Partner Name", PARTNERS_LIST, index=ec_p_idx, key="ec_p")
                         ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['Amount']), step=500.0, key="ec_a")
                         
-                        update_cap_btn = st.form_submit_button("Update Capital Record")
-                        if update_cap_btn:
+                        if st.form_submit_button("Update Capital Record"):
                             c.execute("""
                                 UPDATE capital 
                                 SET entry_date = ?, partner_name = ?, amount = ?
                                 WHERE id = ?
                             """, (ec_date, ec_partner, ec_amt, edit_cap_id))
                             conn.commit()
-                            st.success(f"✅ Capital Record ID {edit_cap_id} updated successfully!")
+                            st.success("✅ Capital Record updated successfully!")
                             st.rerun()
                             
                 with cap_act2:
@@ -622,7 +591,7 @@ elif choice == "Capital Management":
                     if st.button("Delete Capital Record", type="primary", key="btn_del_cap"):
                         c.execute("DELETE FROM capital WHERE id = ?", (del_id,))
                         conn.commit()
-                        st.success(f"Capital Record ID {del_id} deleted successfully!")
+                        st.success("Capital Record deleted successfully!")
                         st.rerun()
         else:
             st.info("No capital contributions recorded yet.")
