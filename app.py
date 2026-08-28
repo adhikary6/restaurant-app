@@ -1,15 +1,26 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
 import time
 from datetime import date, datetime
 from streamlit_gsheets import GSheetsConnection
 
-# MUST be the first Streamlit command
-st.set_page_config(page_title="Restaurant Management Ledger", layout="wide", initial_sidebar_state="collapsed")
+# -------------------------------------------------------------
+# Favicon and Page Config
+# -------------------------------------------------------------
+logo_path = "logo.png"
+page_icon = logo_path if os.path.exists(logo_path) else "🍽️"
+
+st.set_page_config(
+    page_title="The 4-Way Kitchen Ledger",
+    page_icon=page_icon,
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # -------------------------------------------------------------
-# Custom CSS for Blinking Dots and Light-On Nav
+# Custom CSS for Blinking Dots, Buttons, and Branding Layout
 # -------------------------------------------------------------
 st.markdown("""
 <style>
@@ -98,11 +109,43 @@ CAPITAL_COLS = ["id", "entry_date", "partner_name", "amount", "created_by"]
 INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock", "closing_stock", "sold_quantity", "created_by"]
 
 ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
-PRODUCT_OPTIONS = ["Total Food", "Water & Cold Drinks", "Other"]
+
+# Complete Food & Beverage Items
+PRODUCT_OPTIONS = [
+    "Total Food",
+    "Water & Cold Drinks",
+    "বাদাম চাট (Rs. 60)",
+    "পাপড় রোস্ট (Rs. 10)",
+    "ফ্রেঞ্চ ফ্রাই (Rs. 60)",
+    "গ্রিন স্যালাড (Rs. 50)",
+    "ভেজ পকোড়া (Rs. 90)",
+    "ক্রিসপি চিলি বেবিকর্ন (Rs. 140)",
+    "চিলি মাশরুম (Rs. 160)",
+    "ডিমের ওমলেট (Rs. 40)",
+    "ডিমের পোচ (Rs. 40)",
+    "ডিমের ভুজিয়া (Rs. 40)",
+    "ডিমের পকোড়া (Rs. 60)",
+    "চিকেন পকোড়া Full (Rs. 120)",
+    "চিকেন পকোড়া Half (Rs. 80)",
+    "চিকেন ফ্রাই (Rs. 160)",
+    "ক্রিসপি চিকেন (Rs. 160)",
+    "চিকেন 65 (Rs. 160)",
+    "চিকেন চটপটা (Rs. 160)",
+    "চিকেন কষা Full (Rs. 120)",
+    "চিকেন কষা Half (Rs. 70)",
+    "চিলি চিকেন Full (Rs. 150)",
+    "চিলি চিকেন Half (Rs. 90)",
+    "চিকেন ভর্তা (Rs. 150)",
+    "চিকেন দোপিয়াজা (Rs. 150)",
+    "চিকেন মাসালা (Rs. 150)",
+    "রুটি (Rs. 5)",
+    "Other"
+]
 
 EXPENSE_CATEGORIES = [
     "Chicken",
     "Fish",
+    "Mushroom & Babycorn",
     "Green Vegetables",
     "Grocery & Spices",
     "Water Bottle",
@@ -133,7 +176,7 @@ def parse_db_date(val):
         return date.today()
 
 # -------------------------------------------------------------
-# Authentication Flow
+# Authentication Flow & Login Screen
 # -------------------------------------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -156,31 +199,38 @@ def update_user_heartbeat(username):
         pass
 
 def login():
-    st.markdown("### 🔐 Restaurant Management Login")
-    st.info("Google Sheets Connected Cloud Ledger")
-    
-    with st.form("login_form"):
-        user = st.text_input("Username").strip().lower()
-        pwd = st.text_input("Password", type="password").strip()
-        btn = st.form_submit_button("Log In", type="primary")
+    l_c1, l_c2, l_c3 = st.columns([1, 1.8, 1])
+    with l_c2:
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+        if os.path.exists("logo.png"):
+            st.image("logo.png", use_container_width=True)
+        else:
+            st.markdown("<h2 style='text-align: center; color: #f59e0b;'>🍽️ THE 4-WAY KITCHEN</h2>", unsafe_allow_html=True)
+            
+        st.markdown("<p style='text-align: center; color: #94a3b8; font-weight: 500; margin-top: -10px;'>Where Ideas Become Flavour • Cloud Ledger</p>", unsafe_allow_html=True)
         
-        if btn:
-            df_users = get_sheet_data("users", USERS_COLS)
-            df_users['username'] = df_users['username'].astype(str).str.strip().str.lower()
-            df_users['password'] = df_users['password'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        with st.form("login_form"):
+            user = st.text_input("Username").strip().lower()
+            pwd = st.text_input("Password", type="password").strip()
+            btn = st.form_submit_button("Log In", type="primary", use_container_width=True)
             
-            user_row = df_users[df_users['username'] == user]
-            
-            if not user_row.empty and user_row.iloc[0]['password'] == pwd:
-                st.session_state.logged_in = True
-                st.session_state.username = user
-                st.session_state.role = str(user_row.iloc[0]['role']).strip().lower()
-                st.session_state.current_nav_section = "📊 Reports & Analytics"
-                update_user_heartbeat(user)
-                st.success("Login successful!")
-                st.rerun()
-            else:
-                st.error("Invalid Username or Password. Please try again.")
+            if btn:
+                df_users = get_sheet_data("users", USERS_COLS)
+                df_users['username'] = df_users['username'].astype(str).str.strip().str.lower()
+                df_users['password'] = df_users['password'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                
+                user_row = df_users[df_users['username'] == user]
+                
+                if not user_row.empty and user_row.iloc[0]['password'] == pwd:
+                    st.session_state.logged_in = True
+                    st.session_state.username = user
+                    st.session_state.role = str(user_row.iloc[0]['role']).strip().lower()
+                    st.session_state.current_nav_section = "📊 Reports & Analytics"
+                    update_user_heartbeat(user)
+                    st.success("Login successful!")
+                    st.rerun()
+                else:
+                    st.error("Invalid Username or Password. Please try again.")
 
 def logout():
     try:
@@ -234,9 +284,9 @@ def edit_sale_dialog(del_id):
         es_counter = st.selectbox("Counter", counters, index=es_c_idx)
         
         curr_prod = str(row_s['product_name'])
-        prod_idx = PRODUCT_OPTIONS.index(curr_prod) if curr_prod in PRODUCT_OPTIONS else 2
+        prod_idx = PRODUCT_OPTIONS.index(curr_prod) if curr_prod in PRODUCT_OPTIONS else (len(PRODUCT_OPTIONS) - 1)
         e_prod_sel = st.selectbox("Product Category", PRODUCT_OPTIONS, index=prod_idx)
-        e_other_val = curr_prod if prod_idx == 2 else ""
+        e_other_val = curr_prod if prod_idx == (len(PRODUCT_OPTIONS) - 1) else ""
         e_other_prod = st.text_input("Specify if 'Other'", value=e_other_val)
         
         es_qty = st.number_input("Quantity", min_value=0, value=int(row_s['quantity']), step=1)
@@ -372,8 +422,8 @@ def edit_capital_dialog(del_id):
     
     with st.form("modal_edit_cap_form"):
         ec_date = st.date_input("Date", value=parse_db_date(row_cap['entry_date']))
-        ec_p_idx = PARTNERS_LIST.index(row_cap['partner_name']) if row_cap['partner_name'] in PARTNERS_LIST else 0
-        ec_partner = st.selectbox("Partner Name", PARTNERS_LIST, index=ec_p_idx)
+        ec_p_idx = ALL_PARTNERS.index(row_cap['partner_name']) if row_cap['partner_name'] in ALL_PARTNERS else 0
+        ec_partner = st.selectbox("Partner Name", ALL_PARTNERS, index=ec_p_idx)
         ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['amount']), step=100.0, format="%.2f")
         
         if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
@@ -404,9 +454,17 @@ def confirm_delete_cap_dialog(del_id):
             st.rerun()
 
 # -------------------------------------------------------------
-# Main Application UI
+# Main Application UI Header with Brand Logo
 # -------------------------------------------------------------
-st.title("🍽️ Restaurant & Counter - Cloud Accounts Ledger")
+head_c1, head_c2 = st.columns([0.8, 4.2])
+with head_c1:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=95)
+    else:
+        st.markdown("### 🍽️")
+with head_c2:
+    st.markdown("<h2 style='margin-bottom: 0px; color: #0f172a;'>THE 4-WAY KITCHEN</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='margin-top: -5px; color: #64748b; font-weight: 500;'>Where Ideas Become Flavour • Cloud Accounts Ledger</p>", unsafe_allow_html=True)
 
 # Online/Offline Live Status Bar with Blinking Dot
 now_ts = int(time.time())
@@ -439,13 +497,13 @@ online_html = " ".join([f"<span style='background:#dcfce7; color:#15803d; paddin
 offline_html = " ".join([f"<span style='background:#f1f5f9; color:#64748b; padding:3px 10px; border-radius:12px; font-weight:500; margin-right:5px; display:inline-flex; align-items:center;'><span class='off-dot'></span>{u}</span>" for u in offline_users])
 
 st.markdown(f"""
-<div style="background-color:#ffffff; border:1px solid #e2e8f0; padding:10px 16px; border-radius:10px; margin-bottom:16px; display:flex; flex-wrap:wrap; align-items:center; gap:10px;">
+<div style="background-color:#ffffff; border:1px solid #e2e8f0; padding:8px 14px; border-radius:10px; margin-bottom:14px; display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
     <div style="display:flex; align-items:center;">
-        <b style="color:#0f172a; margin-right:8px;">Online ({len(online_users)}):</b> {online_html if online_users else '<span style=\"color:#94a3b8;\">None</span>'}
+        <b style="color:#0f172a; margin-right:8px; font-size: 13px;">Online ({len(online_users)}):</b> {online_html if online_users else '<span style=\"color:#94a3b8;\">None</span>'}
     </div>
     <div style="color:#cbd5e1; margin:0 5px;">|</div>
     <div style="display:flex; align-items:center;">
-        <b style="color:#64748b; margin-right:8px;">Offline ({len(offline_users)}):</b> {offline_html if offline_users else '<span style=\"color:#94a3b8;\">None</span>'}
+        <b style="color:#64748b; margin-right:8px; font-size: 13px;">Offline ({len(offline_users)}):</b> {offline_html if offline_users else '<span style=\"color:#94a3b8;\">None</span>'}
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -485,7 +543,10 @@ else:
 
 choice = st.session_state.current_nav_section
 
-# Sidebar profile & credentials
+# Sidebar profile & credentials with Logo
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", width=110)
+    
 role_badge = f"👑 Admin ({current_user_tag})" if is_admin else f"👁️ Viewer ({current_user_tag})"
 st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}** (`{current_user_tag}`)")
 st.sidebar.caption(f"Role: {role_badge}")
@@ -522,8 +583,6 @@ with st.sidebar.expander("🔑 Change My Password"):
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Logout", use_container_width=True):
     logout()
-
-PARTNERS_LIST = ["Abhijit", "Jit", "Debasis", "Sumit"]
 
 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
@@ -654,8 +713,6 @@ if choice == "📊 Reports & Analytics":
             if not df_sales.empty:
                 df_sales_disp = df_sales.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True).copy()
                 df_sales_disp['amount_fmt'] = df_sales_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                
-                # Replace Database ID with Sequential Sl No
                 df_sales_disp['Sl No'] = range(1, len(df_sales_disp) + 1)
                 
                 table_disp_s = df_sales_disp[['Sl No', 'entry_date', 'counter_type', 'product_name', 'quantity', 'amount_fmt', 'created_by']].rename(
@@ -690,8 +747,6 @@ if choice == "📊 Reports & Analytics":
             if not df_exp.empty:
                 df_exp_disp = df_exp.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True).copy()
                 df_exp_disp['amount_fmt'] = df_exp_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
-                
-                # Replace Database ID with Sequential Sl No
                 df_exp_disp['Sl No'] = range(1, len(df_exp_disp) + 1)
                 
                 table_disp_e = df_exp_disp[['Sl No', 'entry_date', 'category', 'particulars', 'amount_fmt', 'created_by']].rename(
@@ -741,8 +796,8 @@ elif choice == "📝 Daily Entry":
             s_date = st.date_input("Date", value=date.today(), key="s_date")
             counter = st.selectbox("Counter / Location", ["Inside Counter / Dining", "Outside Stall"])
             
-            product_sel = st.selectbox("Product Category", PRODUCT_OPTIONS, key="sale_prod_sel")
-            other_product = st.text_input("Specify if 'Other'", key="sale_other_prod", placeholder="e.g. Special Item")
+            product_sel = st.selectbox("Product Category / Dish", PRODUCT_OPTIONS, key="sale_prod_sel")
+            other_product = st.text_input("Specify if 'Other'", key="sale_other_prod", placeholder="e.g. Special Dish")
             
             quantity = st.number_input("Quantity", min_value=0, value=1, step=1)
             amount = st.number_input("Total Sale Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=1.0, format="%.2f")
@@ -777,7 +832,7 @@ elif choice == "📝 Daily Entry":
         with st.form("expense_form", clear_on_submit=True):
             e_date = st.date_input("Date", value=date.today(), key="e_date")
             category = st.selectbox("Expense Category", EXPENSE_CATEGORIES)
-            particulars = st.text_input("Particulars / Details (e.g. 5kg Chicken, Rice, Cylinder refill)")
+            particulars = st.text_input("Particulars / Details (e.g. 5kg Chicken, Spices, Vegetables)")
             e_amount = st.number_input("Expense Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=1.0, format="%.2f")
             
             submit_exp = st.form_submit_button("Save Expense to Google Sheets")
@@ -864,9 +919,7 @@ elif choice == "📦 Daily Stock Register":
             df_stock_filtered = df_stock_filtered.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True)
             
             if not df_stock_filtered.empty:
-                # Replace Database ID with Sequential Sl No
                 df_stock_filtered['Sl No'] = range(1, len(df_stock_filtered) + 1)
-                
                 display_cols = {
                     'Sl No': 'Sl No', 'entry_date': 'Date', 'item_name': 'Item',
                     'opening_stock': 'Opening', 'added_stock': 'Added',
@@ -919,7 +972,7 @@ elif choice == "💼 Capital Management":
             st.markdown("### Add Partner Capital")
             with st.form("capital_form", clear_on_submit=True):
                 c_date = st.date_input("Date", value=date.today())
-                partner = st.selectbox("Partner Name", PARTNERS_LIST)
+                partner = st.selectbox("Partner Name", ALL_PARTNERS)
                 cap_amount = st.number_input("Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=100.0, format="%.2f")
                 
                 if st.form_submit_button("Record Capital"):
@@ -958,8 +1011,6 @@ elif choice == "💼 Capital Management":
             st.markdown("#### Capital Contribution History")
             df_cap_disp = df_cap.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True).copy()
             df_cap_disp['amount_fmt'] = df_cap_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
-            
-            # Replace Database ID with Sequential Sl No
             df_cap_disp['Sl No'] = range(1, len(df_cap_disp) + 1)
             
             table_disp_cap = df_cap_disp[['Sl No', 'entry_date', 'partner_name', 'amount_fmt', 'created_by']].rename(
