@@ -3,25 +3,46 @@ import pandas as pd
 import io
 import os
 import time
+import base64
+from PIL import Image
 from datetime import date, datetime
 from streamlit_gsheets import GSheetsConnection
 
 # -------------------------------------------------------------
-# Favicon and Page Config
+# Favicon and Page Config with PIL Image
 # -------------------------------------------------------------
-logo_path = "logo.png"
-page_icon = logo_path if os.path.exists(logo_path) else "🍽️"
+logo_img = None
+logo_b64 = ""
+
+if os.path.exists("logo.png"):
+    try:
+        logo_img = Image.open("logo.png")
+        with open("logo.png", "rb") as img_f:
+            logo_b64 = base64.b64encode(img_f.read()).decode("utf-8")
+    except Exception:
+        logo_img = "🍽️"
+else:
+    logo_img = "🍽️"
 
 st.set_page_config(
     page_title="The 4-Way Kitchen Ledger",
-    page_icon=page_icon,
+    page_icon=logo_img,
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 # -------------------------------------------------------------
-# Custom CSS for Blinking Dots, Buttons, and Branding Layout
+# Mobile Home Screen Icon (PWA Touch Icon) & Custom CSS
 # -------------------------------------------------------------
+if logo_b64:
+    st.markdown(f"""
+    <head>
+        <link rel="icon" type="image/png" href="data:image/png;base64,{logo_b64}">
+        <link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}">
+        <link rel="shortcut icon" href="data:image/png;base64,{logo_b64}">
+    </head>
+    """, unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 @keyframes blinker {
@@ -110,7 +131,6 @@ INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock
 
 ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
 
-# Complete Food & Beverage Items
 PRODUCT_OPTIONS = [
     "Total Food",
     "Water & Cold Drinks",
