@@ -97,6 +97,11 @@ div[data-testid="stButton"] button[kind="primary"] {
     text-shadow: 0 0 10px rgba(56, 189, 248, 0.75) !important;
     font-weight: 700 !important;
 }
+html, body, [data-testid="stAppViewContainer"] {
+    overscroll-behavior-y: contain !important;
+    overscroll-behavior: contain !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
