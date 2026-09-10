@@ -101,7 +101,6 @@ html, body, [data-testid="stAppViewContainer"] {
     overscroll-behavior-y: contain !important;
     overscroll-behavior: contain !important;
 }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -181,6 +180,7 @@ EXPENSE_CATEGORIES = [
     "Staff Advance",
     "Plates & Cutlery",
     "Petty Cash",
+    "Partner Profit Withdrawal",
     "Miscellaneous"
 ]
 
@@ -617,6 +617,37 @@ st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 if choice == "📊 Reports & Analytics":
     st.subheader("📊 Profit & Loss Summary & Excel Export")
     
+    # Fetch all Raw Data for accurate Cash in Hand & Date Filter calculations
+    df_sales_raw = get_sheet_data("sales", SALES_COLS)
+    df_exp_raw = get_sheet_data("expenses", EXPENSES_COLS)
+    df_stock_raw = get_sheet_data("inventory_log", INVENTORY_COLS)
+    df_cap_raw = get_sheet_data("capital", CAPITAL_COLS)
+
+    # Convert numeric fields
+    if not df_cap_raw.empty:
+        df_cap_raw['amount'] = pd.to_numeric(df_cap_raw['amount'], errors='coerce').fillna(0.0)
+    if not df_sales_raw.empty:
+        df_sales_raw['amount'] = pd.to_numeric(df_sales_raw['amount'], errors='coerce').fillna(0.0)
+    if not df_exp_raw.empty:
+        df_exp_raw['amount'] = pd.to_numeric(df_exp_raw['amount'], errors='coerce').fillna(0.0)
+
+    # Calculate Lifetime Balances for Live Cash in Hand
+    lifetime_capital = df_cap_raw['amount'].sum() if not df_cap_raw.empty else 0.0
+    lifetime_sales = df_sales_raw['amount'].sum() if not df_sales_raw.empty else 0.0
+    lifetime_expenses = df_exp_raw['amount'].sum() if not df_exp_raw.empty else 0.0
+    current_cash_in_hand = (lifetime_capital + lifetime_sales) - lifetime_expenses
+
+    # Live Cash in Hand Display Banner
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: #ffffff; padding: 16px 20px; border-radius: 10px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(6, 95, 70, 0.25);">
+        <div>
+            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0;">💰 Live Cash in Hand</div>
+            <div style="font-size: 12px; color: #e7f5ef; margin-top: 2px;">(ক্যাশিয়ারের ড্রয়ারের মোট অবশিষ্ট ক্যাশ ব্যালেন্স)</div>
+        </div>
+        <div style="font-size: 26px; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Rs. {current_cash_in_hand:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     col_d1, col_d2 = st.columns(2)
     with col_d1:
         start_date = st.date_input("Start Date", value=date(2026, 8, 1))
@@ -624,13 +655,7 @@ if choice == "📊 Reports & Analytics":
         end_date = st.date_input("End Date", value=date.today())
         
     if start_date <= end_date:
-        df_sales_raw = get_sheet_data("sales", SALES_COLS)
-        df_exp_raw = get_sheet_data("expenses", EXPENSES_COLS)
-        df_stock_raw = get_sheet_data("inventory_log", INVENTORY_COLS)
-        df_cap_raw = get_sheet_data("capital", CAPITAL_COLS)
-
         if not df_sales_raw.empty:
-            df_sales_raw['amount'] = pd.to_numeric(df_sales_raw['amount'], errors='coerce').fillna(0.0)
             df_sales_raw['created_by'] = df_sales_raw['created_by'].fillna("-")
             df_sales_raw['date_parsed'] = pd.to_datetime(df_sales_raw['entry_date'], errors='coerce').dt.date
             df_sales = df_sales_raw[(df_sales_raw['date_parsed'] >= start_date) & (df_sales_raw['date_parsed'] <= end_date)].copy()
@@ -638,7 +663,6 @@ if choice == "📊 Reports & Analytics":
             df_sales = pd.DataFrame(columns=SALES_COLS)
 
         if not df_exp_raw.empty:
-            df_exp_raw['amount'] = pd.to_numeric(df_exp_raw['amount'], errors='coerce').fillna(0.0)
             df_exp_raw['created_by'] = df_exp_raw['created_by'].fillna("-")
             df_exp_raw['date_parsed'] = pd.to_datetime(df_exp_raw['entry_date'], errors='coerce').dt.date
             df_exp = df_exp_raw[(df_exp_raw['date_parsed'] >= start_date) & (df_exp_raw['date_parsed'] <= end_date)].copy()
@@ -656,8 +680,8 @@ if choice == "📊 Reports & Analytics":
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_summary = pd.DataFrame({
-                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day"],
-                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day]
+                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day", "Current Live Cash in Hand"],
+                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day, current_cash_in_hand]
             })
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
             df_sales.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Sales Register', index=False)
@@ -677,7 +701,7 @@ if choice == "📊 Reports & Analytics":
         with card_col1:
             st.markdown(f"""
             <div style="background-color: #f0fdf4; border: 1px solid #86efac; padding: 14px; border-radius: 8px;">
-                <p style="margin: 0; color: #166534; font-size: 13px; font-weight: bold;">TOTAL SALES</p>
+                <p style="margin: 0; color: #166534; font-size: 13px; font-weight: bold;">TOTAL SALES (PERIOD)</p>
                 <h2 style="margin: 5px 0 0 0; color: #15803d; font-size: 26px;">Rs. {total_sale:,.2f}</h2>
             </div>
             """, unsafe_allow_html=True)
@@ -685,7 +709,7 @@ if choice == "📊 Reports & Analytics":
         with card_col2:
             st.markdown(f"""
             <div style="background-color: #fff1f2; border: 1px solid #fecdd3; padding: 14px; border-radius: 8px;">
-                <p style="margin: 0; color: #9f1239; font-size: 13px; font-weight: bold;">TOTAL EXPENSES</p>
+                <p style="margin: 0; color: #9f1239; font-size: 13px; font-weight: bold;">TOTAL EXPENSES (PERIOD)</p>
                 <h2 style="margin: 5px 0 0 0; color: #be123c; font-size: 26px;">Rs. {total_exp:,.2f}</h2>
             </div>
             """, unsafe_allow_html=True)
