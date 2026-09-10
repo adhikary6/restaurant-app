@@ -617,7 +617,7 @@ st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 if choice == "📊 Reports & Analytics":
     st.subheader("📊 Profit & Loss Summary & Excel Export")
     
-    # Fetch all Raw Data for accurate Cash Balance & Date Filter calculations
+    # Fetch all Raw Data
     df_sales_raw = get_sheet_data("sales", SALES_COLS)
     df_exp_raw = get_sheet_data("expenses", EXPENSES_COLS)
     df_stock_raw = get_sheet_data("inventory_log", INVENTORY_COLS)
@@ -631,21 +631,61 @@ if choice == "📊 Reports & Analytics":
     if not df_exp_raw.empty:
         df_exp_raw['amount'] = pd.to_numeric(df_exp_raw['amount'], errors='coerce').fillna(0.0)
 
-    # Calculate Lifetime Sales & Expenses for Actual Net Rolling Cash Balance
+    # Lifetime Financial Calculations
+    lifetime_capital = df_cap_raw['amount'].sum() if not df_cap_raw.empty else 0.0
     lifetime_sales = df_sales_raw['amount'].sum() if not df_sales_raw.empty else 0.0
     lifetime_expenses = df_exp_raw['amount'].sum() if not df_exp_raw.empty else 0.0
-    current_cash_in_hand = lifetime_sales - lifetime_expenses
+    
+    lifetime_profit = lifetime_sales - lifetime_expenses
+    current_cash_in_hand = (lifetime_capital + lifetime_sales) - lifetime_expenses
 
-    # Live Net Cash Display Banner
-    st.markdown(f"""
-    <div style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: #ffffff; padding: 16px 20px; border-radius: 10px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(6, 95, 70, 0.25);">
-        <div>
-            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0;">💰 Live Net Cash Balance</div>
-            <div style="font-size: 11px; color: #e7f5ef; margin-top: 2px;">Total Lifetime Sales Minus Total Lifetime Expenses</div>
+    # Top Dual Overview Cards: Lifetime Profit & Cash in Hand
+    top_c1, top_c2 = st.columns(2)
+    with top_c1:
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; padding: 16px 18px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #334155; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8;">🌟 Total Lifetime Profit (Till Date)</div>
+            <div style="font-size: 24px; font-weight: 800; margin-top: 4px; color: {'#4ade80' if lifetime_profit >= 0 else '#f87171'};">
+                {'+ ' if lifetime_profit >= 0 else '- '}Rs. {abs(lifetime_profit):,.2f}
+            </div>
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Cumulative Net Profit Since Launch</div>
         </div>
-        <div style="font-size: 26px; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Rs. {current_cash_in_hand:,.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+
+    with top_c2:
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: #ffffff; padding: 16px 18px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(6, 95, 70, 0.2);">
+            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0;">💰 Live Cash in Hand</div>
+            <div style="font-size: 24px; font-weight: 800; margin-top: 4px; color: #ffffff;">
+                Rs. {current_cash_in_hand:,.2f}
+            </div>
+            <div style="font-size: 11px; color: #d1fae5; margin-top: 2px;">(Capital + Total Sales) − Total Expenses</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Month-on-Month (MoM) Profit Breakdown Table
+    if not df_sales_raw.empty or not df_exp_raw.empty:
+        df_s_mom = df_sales_raw.copy()
+        df_s_mom['month'] = pd.to_datetime(df_s_mom['entry_date'], errors='coerce').dt.strftime('%Y-%m')
+        m_sales = df_s_mom.groupby('month')['amount'].sum().reset_index().rename(columns={'amount': 'Sales'})
+
+        df_e_mom = df_exp_raw.copy()
+        df_e_mom['month'] = pd.to_datetime(df_e_mom['entry_date'], errors='coerce').dt.strftime('%Y-%m')
+        m_exp = df_e_mom.groupby('month')['amount'].sum().reset_index().rename(columns={'amount': 'Expenses'})
+
+        df_mom = pd.merge(m_sales, m_exp, on='month', how='outer').fillna(0.0)
+        df_mom = df_mom.dropna(subset=['month'])
+        df_mom = df_mom[df_mom['month'] != 'NaT'].sort_values(by='month', ascending=False).reset_index(drop=True)
+        df_mom['Profit'] = df_mom['Sales'] - df_mom['Expenses']
+
+        df_mom_disp = df_mom.copy()
+        df_mom_disp['Sales'] = df_mom_disp['Sales'].apply(lambda x: f"Rs. {x:,.2f}")
+        df_mom_disp['Expenses'] = df_mom_disp['Expenses'].apply(lambda x: f"Rs. {x:,.2f}")
+        df_mom_disp['Profit'] = df_mom_disp['Profit'].apply(lambda x: f"+ Rs. {x:,.2f}" if x >= 0 else f"- Rs. {abs(x):,.2f}")
+        df_mom_disp = df_mom_disp.rename(columns={'month': 'Month (YYYY-MM)', 'Sales': 'Total Sales', 'Expenses': 'Total Expenses', 'Profit': 'Net Profit / Loss'})
+
+        with st.expander("📅 Month-on-Month (MoM) Profit & Performance Ledger", expanded=True):
+            st.dataframe(df_mom_disp, use_container_width=True, hide_index=True)
 
     col_d1, col_d2 = st.columns(2)
     with col_d1:
@@ -679,8 +719,8 @@ if choice == "📊 Reports & Analytics":
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_summary = pd.DataFrame({
-                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day", "Current Live Net Cash Balance"],
-                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day, current_cash_in_hand]
+                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day", "Lifetime Profit Till Date", "Current Cash in Hand"],
+                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day, lifetime_profit, current_cash_in_hand]
             })
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
             df_sales.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Sales Register', index=False)
@@ -717,14 +757,14 @@ if choice == "📊 Reports & Analytics":
             if net_profit >= 0:
                 st.markdown(f"""
                 <div style="background-color: #dcfce7; border: 2px solid #22c55e; padding: 14px; border-radius: 8px;">
-                    <p style="margin: 0; color: #14532d; font-size: 13px; font-weight: bold;">NET PROFIT (SURPLUS)</p>
+                    <p style="margin: 0; color: #14532d; font-size: 13px; font-weight: bold;">NET PROFIT (PERIOD)</p>
                     <h2 style="margin: 5px 0 0 0; color: #16a34a; font-size: 26px;">+ Rs. {net_profit:,.2f}</h2>
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                 <div style="background-color: #fee2e2; border: 2px solid #ef4444; padding: 14px; border-radius: 8px;">
-                    <p style="margin: 0; color: #7f1d1d; font-size: 13px; font-weight: bold;">NET LOSS (DEFICIT)</p>
+                    <p style="margin: 0; color: #7f1d1d; font-size: 13px; font-weight: bold;">NET LOSS (PERIOD)</p>
                     <h2 style="margin: 5px 0 0 0; color: #dc2626; font-size: 26px;">- Rs. {abs(net_profit):,.2f}</h2>
                 </div>
                 """, unsafe_allow_html=True)
