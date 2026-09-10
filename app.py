@@ -124,7 +124,14 @@ def get_sheet_data(worksheet_name, expected_cols):
 
 def update_sheet_data(worksheet_name, df):
     df_clean = df.copy()
-    conn.update(worksheet=worksheet_name, data=df_clean)
+    try:
+        conn.update(worksheet=worksheet_name, data=df_clean)
+    except Exception:
+        try:
+            conn._instance._spreadsheet.add_worksheet(title=worksheet_name, rows=100, cols=10)
+            conn.update(worksheet=worksheet_name, data=df_clean)
+        except Exception:
+            pass
 
 # Default Schemas
 USERS_COLS = ["username", "password", "role", "last_seen"]
@@ -390,8 +397,49 @@ def confirm_delete_exp_dialog(del_id):
         if st.button("Cancel", use_container_width=True):
             st.rerun()
 
+@st.dialog("✏️ Edit Settlement Record")
+def edit_settlement_dialog(del_id):
+    df_set_raw = get_sheet_data("settlements", SETTLEMENTS_COLS)
+    matched = df_set_raw[df_set_raw['id'] == del_id]
+    if matched.empty:
+        st.error("Record not found.")
+        return
+    row_set = matched.iloc[0]
+    
+    with st.form("modal_edit_set_form"):
+        eset_date = st.date_input("Date", value=parse_db_date(row_set['entry_date']))
+        eset_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_set['amount']), step=500.0, format="%.2f")
+        eset_note = st.text_input("Note / Details", value=str(row_set['note']))
+        
+        if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
+            idx = df_set_raw[df_set_raw['id'] == del_id].index[0]
+            df_set_raw.loc[idx, ['entry_date', 'amount', 'note', 'created_by']] = [
+                str(eset_date), float(eset_amt), eset_note.strip(), current_user_tag
+            ]
+            update_sheet_data("settlements", df_set_raw)
+            update_user_heartbeat(st.session_state.username)
+            st.success("✅ Settlement Record updated successfully!")
+            st.rerun()
+
+@st.dialog("⚠️ Confirm Settlement Deletion")
+def confirm_delete_settlement_dialog(del_id):
+    st.write("Are you sure you want to permanently delete this landlord cash payout record?")
+    st.caption("This action cannot be undone.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Yes, Delete", type="primary", use_container_width=True):
+            df_set_raw = get_sheet_data("settlements", SETTLEMENTS_COLS)
+            df_set_raw = df_set_raw[df_set_raw['id'] != del_id]
+            update_sheet_data("settlements", df_set_raw)
+            update_user_heartbeat(st.session_state.username)
+            st.success("Record deleted successfully!")
+            st.rerun()
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            st.rerun()
+
 # -------------------------------------------------------------
-# Main Application UI Header
+# Main Header & Navigation
 # -------------------------------------------------------------
 head_c1, head_c2 = st.columns([0.8, 4.2])
 with head_c1:
@@ -519,12 +567,10 @@ if choice == "📊 Reports & Analytics":
     lifetime_expenses = df_exp_raw['amount'].sum() if not df_exp_raw.empty else 0.0
     lifetime_profit = lifetime_sales - lifetime_expenses
 
-    # Total Cash Collected from Landlord
-    # Default fallback: August sales (49,777) if settlements sheet is new/empty
+    # Calculation of Cash Collected from Landlord
     if not df_settle_raw.empty:
         total_cash_collected_from_landlord = df_settle_raw['amount'].sum()
     else:
-        # Auto-compute August collection as initial base
         df_s_aug = df_sales_raw.copy()
         if not df_s_aug.empty:
             df_s_aug['date_p'] = pd.to_datetime(df_s_aug['entry_date'], errors='coerce')
@@ -532,7 +578,6 @@ if choice == "📊 Reports & Analytics":
         else:
             total_cash_collected_from_landlord = 0.0
 
-    # Landlord Due & Actual Drawer Cash
     sales_with_landlord = max(0.0, lifetime_sales - total_cash_collected_from_landlord)
     actual_cash_in_hand = (lifetime_capital + total_cash_collected_from_landlord) - lifetime_expenses
 
@@ -617,6 +662,13 @@ if choice == "📊 Reports & Analytics":
         else:
             df_exp = pd.DataFrame(columns=EXPENSES_COLS)
 
+        if not df_settle_raw.empty:
+            df_settle_raw['created_by'] = df_settle_raw['created_by'].fillna("-")
+            df_settle_raw['date_parsed'] = pd.to_datetime(df_settle_raw['entry_date'], errors='coerce').dt.date
+            df_settle = df_settle_raw[(df_settle_raw['date_parsed'] >= start_date) & (df_settle_raw['date_parsed'] <= end_date)].copy()
+        else:
+            df_settle = pd.DataFrame(columns=SETTLEMENTS_COLS)
+
         total_sale = df_sales['amount'].sum() if not df_sales.empty else 0.0
         total_exp = df_exp['amount'].sum() if not df_exp.empty else 0.0
         net_profit = total_sale - total_exp
@@ -634,6 +686,7 @@ if choice == "📊 Reports & Analytics":
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
             df_sales.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Sales Register', index=False)
             df_exp.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Expense Register', index=False)
+            df_settle_raw.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Landlord Settlements', index=False)
             df_stock_raw.to_excel(writer, sheet_name='Stock Register', index=False)
             df_cap_raw.to_excel(writer, sheet_name='Capital Register', index=False)
 
@@ -704,7 +757,7 @@ if choice == "📊 Reports & Analytics":
             """, unsafe_allow_html=True)
                 
         st.markdown("---")
-        tab1, tab2 = st.tabs(["Sales Breakdown", "Expense Breakdown"])
+        tab1, tab2, tab3 = st.tabs(["Sales Breakdown", "Expense Breakdown", "🏦 Landlord Payouts History"])
         
         with tab1:
             if not df_sales.empty:
@@ -773,11 +826,45 @@ if choice == "📊 Reports & Analytics":
                                 st.warning("Please tap on a row in the table above first.")
             else:
                 st.info("No expense records found for this period.")
+
+        with tab3:
+            if not df_settle.empty:
+                df_settle_disp = df_settle.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True).copy()
+                df_settle_disp['amount_fmt'] = df_settle_disp['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+                df_settle_disp['Sl No'] = range(1, len(df_settle_disp) + 1)
+                
+                table_disp_set = df_settle_disp[['Sl No', 'entry_date', 'amount_fmt', 'note', 'created_by']].rename(
+                    columns={'entry_date': 'Payout Date', 'amount_fmt': 'Cash Received', 'note': 'Note / Period Details', 'created_by': 'Received By'}
+                )
+                
+                st.caption("👆 **Tip:** Tap on any payout row to select it, then tap Edit or Delete below.")
+                event_set = st.dataframe(table_disp_set, use_container_width=True, on_select="rerun", selection_mode="single-row", key="table_set_sel", hide_index=True)
+                
+                if is_admin:
+                    selected_rows_set = event_set.selection.rows if hasattr(event_set, 'selection') else []
+                    sel_set_id = df_settle_disp.iloc[selected_rows_set[0]]['id'] if selected_rows_set else None
+                    
+                    st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+                    btn_c1, btn_c2 = st.columns(2)
+                    with btn_c1:
+                        if st.button("✏️ Edit Selected Settlement", use_container_width=True, key="btn_edit_set_tap"):
+                            if sel_set_id is not None:
+                                edit_settlement_dialog(sel_set_id)
+                            else:
+                                st.warning("Please tap on a settlement row above first.")
+                    with btn_c2:
+                        if st.button("🗑️ Delete Selected Settlement", use_container_width=True, key="btn_del_set_tap"):
+                            if sel_set_id is not None:
+                                confirm_delete_settlement_dialog(sel_set_id)
+                            else:
+                                st.warning("Please tap on a settlement row above first.")
+            else:
+                st.info("No landlord cash payouts recorded for this period.")
     else:
         st.error("Start Date must be before or equal to End Date.")
 
 # -------------------------------------------------------------
-# 2. Daily Entry Section (With Cash Settlement from Landlord)
+# 2. Daily Entry Section (With Date-Wise Settlement History)
 # -------------------------------------------------------------
 elif choice == "📝 Daily Entry":
     if not is_admin:
@@ -786,14 +873,15 @@ elif choice == "📝 Daily Entry":
 
     st.subheader("📝 Daily Sales, Expense & Landlord Settlements")
     
-    # Quick Settlement Box for Landlord Payout
-    with st.expander("🏦 Record Cash Received from Landlord (Weekly / Fortnightly Collection)", expanded=False):
+    # Landlord Cash Settlement Form & Live History
+    with st.expander("🏦 Record & View Landlord Cash Payouts", expanded=True):
+        st.markdown("##### 📥 New Cash Collection from Landlord")
         with st.form("landlord_settle_form", clear_on_submit=True):
             set_date = st.date_input("Settlement Date", value=date.today())
             set_amount = st.number_input("Cash Received Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=500.0, format="%.2f")
             set_note = st.text_input("Note / Period Details", placeholder="e.g. Sales cash collected from 1st to 15th Sept")
             
-            if st.form_submit_button("Record Landlord Cash Payout", type="primary"):
+            if st.form_submit_button("Save Landlord Cash Payout", type="primary"):
                 final_set_amt = float(set_amount) if set_amount is not None else 0.0
                 if final_set_amt > 0:
                     df_set = get_sheet_data("settlements", SETTLEMENTS_COLS)
@@ -808,10 +896,27 @@ elif choice == "📝 Daily Entry":
                     df_set = pd.concat([df_set, new_row], ignore_index=True)
                     update_sheet_data("settlements", df_set)
                     update_user_heartbeat(st.session_state.username)
-                    st.success(f"✅ Cash Payout of Rs. {final_set_amt:,.2f} received from Landlord recorded!")
+                    st.success(f"✅ Cash Payout of Rs. {final_set_amt:,.2f} received on {set_date} recorded!")
                     st.rerun()
                 else:
                     st.error("Please enter a valid cash amount.")
+
+        # Live Table of Past Payouts
+        df_set_hist = get_sheet_data("settlements", SETTLEMENTS_COLS)
+        if not df_set_hist.empty:
+            st.markdown("---")
+            st.markdown("##### 📋 Recent Landlord Payout History (Date-Wise)")
+            df_set_hist['amount_fmt'] = pd.to_numeric(df_set_hist['amount'], errors='coerce').fillna(0.0).apply(lambda x: f"Rs. {x:,.2f}")
+            df_set_hist = df_set_hist.sort_values(by=['entry_date', 'id'], ascending=[False, False]).reset_index(drop=True)
+            df_set_hist['Sl No'] = range(1, len(df_set_hist) + 1)
+            
+            st.dataframe(
+                df_set_hist[['Sl No', 'entry_date', 'amount_fmt', 'note', 'created_by']].rename(
+                    columns={'entry_date': 'Date', 'amount_fmt': 'Cash Collected', 'note': 'Details / Period', 'created_by': 'By'}
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
 
     col1, col2 = st.columns(2)
     with col1:
