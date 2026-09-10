@@ -132,6 +132,7 @@ SALES_COLS = ["id", "entry_date", "counter_type", "product_name", "quantity", "a
 EXPENSES_COLS = ["id", "entry_date", "category", "particulars", "amount", "created_by"]
 CAPITAL_COLS = ["id", "entry_date", "partner_name", "amount", "created_by"]
 INVENTORY_COLS = ["id", "entry_date", "item_name", "opening_stock", "added_stock", "closing_stock", "sold_quantity", "created_by"]
+SETTLEMENTS_COLS = ["id", "entry_date", "amount", "note", "created_by"]
 
 ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
 
@@ -291,7 +292,7 @@ def get_user_initials(uname):
 current_user_tag = get_user_initials(st.session_state.username)
 
 # -------------------------------------------------------------
-# Modals: Edit & Delete Dialogs (Auto-filled with old data)
+# Modals: Edit & Delete Dialogs
 # -------------------------------------------------------------
 @st.dialog("✏️ Edit Sale Record")
 def edit_sale_dialog(del_id):
@@ -389,97 +390,8 @@ def confirm_delete_exp_dialog(del_id):
         if st.button("Cancel", use_container_width=True):
             st.rerun()
 
-@st.dialog("✏️ Edit Stock Record")
-def edit_stock_dialog(del_id):
-    df_stock = get_sheet_data("inventory_log", INVENTORY_COLS)
-    matched = df_stock[df_stock['id'] == del_id]
-    if matched.empty:
-        st.error("Record not found.")
-        return
-    row_stk = matched.iloc[0]
-    
-    with st.form("modal_edit_stock_form"):
-        e_stk_date = st.date_input("Date", value=parse_db_date(row_stk['entry_date']))
-        current_item_val = row_stk['item_name'] if row_stk['item_name'] in TRACKED_ITEMS else TRACKED_ITEMS[0]
-        e_stk_item = st.selectbox("Item", TRACKED_ITEMS, index=TRACKED_ITEMS.index(current_item_val))
-        e_op = st.number_input("Opening Stock", min_value=0, value=int(row_stk['opening_stock']), step=1)
-        e_add = st.number_input("Added Stock", min_value=0, value=int(row_stk['added_stock']), step=1)
-        e_cl = st.number_input("Closing Stock", min_value=0, value=int(row_stk['closing_stock']), step=1)
-        
-        e_tot = e_op + e_add
-        e_sold = max(0, e_tot - e_cl)
-        
-        if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
-            idx = df_stock[df_stock['id'] == del_id].index[0]
-            df_stock.loc[idx, ['entry_date', 'item_name', 'opening_stock', 'added_stock', 'closing_stock', 'sold_quantity', 'created_by']] = [
-                str(e_stk_date), e_stk_item, int(e_op), int(e_add), int(e_cl), int(e_sold), current_user_tag
-            ]
-            update_sheet_data("inventory_log", df_stock)
-            update_user_heartbeat(st.session_state.username)
-            st.success("✅ Stock Record updated successfully!")
-            st.rerun()
-
-@st.dialog("⚠️ Confirm Deletion")
-def confirm_delete_stock_dialog(del_id):
-    st.write("Are you sure you want to permanently delete this stock record?")
-    st.caption("This action cannot be undone.")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Yes, Delete", type="primary", use_container_width=True):
-            df_stock = get_sheet_data("inventory_log", INVENTORY_COLS)
-            df_stock = df_stock[df_stock['id'] != del_id]
-            update_sheet_data("inventory_log", df_stock)
-            update_user_heartbeat(st.session_state.username)
-            st.success("Record deleted successfully!")
-            st.rerun()
-    with col2:
-        if st.button("Cancel", use_container_width=True):
-            st.rerun()
-
-@st.dialog("✏️ Edit Capital Record")
-def edit_capital_dialog(del_id):
-    df_cap = get_sheet_data("capital", CAPITAL_COLS)
-    matched = df_cap[df_cap['id'] == del_id]
-    if matched.empty:
-        st.error("Record not found.")
-        return
-    row_cap = matched.iloc[0]
-    
-    with st.form("modal_edit_cap_form"):
-        ec_date = st.date_input("Date", value=parse_db_date(row_cap['entry_date']))
-        ec_p_idx = ALL_PARTNERS.index(row_cap['partner_name']) if row_cap['partner_name'] in ALL_PARTNERS else 0
-        ec_partner = st.selectbox("Partner Name", ALL_PARTNERS, index=ec_p_idx)
-        ec_amt = st.number_input("Amount (Rs.)", min_value=0.0, value=float(row_cap['amount']), step=100.0, format="%.2f")
-        
-        if st.form_submit_button("Save Changes", type="primary", use_container_width=True):
-            idx = df_cap[df_cap['id'] == del_id].index[0]
-            df_cap.loc[idx, ['entry_date', 'partner_name', 'amount', 'created_by']] = [
-                str(ec_date), ec_partner, float(ec_amt), current_user_tag
-            ]
-            update_sheet_data("capital", df_cap)
-            update_user_heartbeat(st.session_state.username)
-            st.success("✅ Capital Record updated successfully!")
-            st.rerun()
-
-@st.dialog("⚠️ Confirm Deletion")
-def confirm_delete_cap_dialog(del_id):
-    st.write("Are you sure you want to permanently delete this capital record?")
-    st.caption("This action cannot be undone.")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Yes, Delete", type="primary", use_container_width=True):
-            df_cap = get_sheet_data("capital", CAPITAL_COLS)
-            df_cap = df_cap[df_cap['id'] != del_id]
-            update_sheet_data("capital", df_cap)
-            update_user_heartbeat(st.session_state.username)
-            st.success("Record deleted successfully!")
-            st.rerun()
-    with col2:
-        if st.button("Cancel", use_container_width=True):
-            st.rerun()
-
 # -------------------------------------------------------------
-# Main Application UI Header with Brand Logo
+# Main Application UI Header
 # -------------------------------------------------------------
 head_c1, head_c2 = st.columns([0.8, 4.2])
 with head_c1:
@@ -491,7 +403,7 @@ with head_c2:
     st.markdown("<h2 style='margin-bottom: 0px; color: #0f172a;'>THE 4-WAY KITCHEN</h2>", unsafe_allow_html=True)
     st.markdown("<p style='margin-top: -5px; color: #64748b; font-weight: 500;'>Where Ideas Become Flavour • Cloud Accounts Ledger</p>", unsafe_allow_html=True)
 
-# Online/Offline Live Status Bar with Blinking Dot
+# Status Bar
 now_ts = int(time.time())
 df_u_status = get_sheet_data("users", USERS_COLS)
 online_users = []
@@ -502,7 +414,7 @@ for partner in ALL_PARTNERS:
     if not matched_row.empty:
         try:
             last_ts = float(matched_row.iloc[0]['last_seen'])
-            if (now_ts - last_ts) < 300: # 5 minutes threshold
+            if (now_ts - last_ts) < 300:
                 online_users.append(partner)
             else:
                 offline_users.append(partner)
@@ -533,9 +445,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------
-# Top Large Button Navigation Bar
-# -------------------------------------------------------------
+# Navigation
 if is_admin:
     nav_btn_cols = st.columns(4)
     nav_items = [
@@ -568,42 +478,13 @@ else:
 
 choice = st.session_state.current_nav_section
 
-# Sidebar profile & credentials with Logo
+# Sidebar
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", width=110)
     
 role_badge = f"👑 Admin ({current_user_tag})" if is_admin else f"👁️ Viewer ({current_user_tag})"
 st.sidebar.markdown(f"👤 Logged in as: **{st.session_state.username.capitalize()}** (`{current_user_tag}`)")
 st.sidebar.caption(f"Role: {role_badge}")
-
-with st.sidebar.expander("🔑 Change My Password"):
-    with st.form("change_pwd_form", clear_on_submit=True):
-        old_p = st.text_input("Current Password", type="password")
-        new_p = st.text_input("New Password", type="password")
-        conf_p = st.text_input("Confirm New Password", type="password")
-        update_p_btn = st.form_submit_button("Update Password")
-        
-        if update_p_btn:
-            df_users = get_sheet_data("users", USERS_COLS)
-            df_users = df_users.astype({"username": str, "password": str, "role": str})
-            df_users['username_clean'] = df_users['username'].str.strip().str.lower()
-            df_users['password_clean'] = df_users['password'].str.replace(r'\.0$', '', regex=True).str.strip()
-            
-            user_idx = df_users[df_users['username_clean'] == st.session_state.username].index
-            
-            if not user_idx.empty:
-                curr_pwd = df_users.loc[user_idx[0], 'password_clean']
-                if old_p.strip() != curr_pwd:
-                    st.error("Current password is incorrect.")
-                elif not new_p.strip():
-                    st.error("New password cannot be empty.")
-                elif new_p.strip() != conf_p.strip():
-                    st.error("New passwords do not match.")
-                else:
-                    df_users_save = df_users[['username', 'password', 'role']].copy()
-                    df_users_save.loc[user_idx[0], 'password'] = str(new_p.strip())
-                    update_sheet_data("users", df_users_save)
-                    st.success("✅ Password updated in Google Sheet!")
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 Logout", use_container_width=True):
@@ -612,58 +493,85 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 1. Reports & Analytics Section (DEFAULT LANDING)
+# 1. Reports & Analytics Section
 # -------------------------------------------------------------
 if choice == "📊 Reports & Analytics":
     st.subheader("📊 Profit & Loss Summary & Excel Export")
     
-    # Fetch all Raw Data
+    # Fetch Data
     df_sales_raw = get_sheet_data("sales", SALES_COLS)
     df_exp_raw = get_sheet_data("expenses", EXPENSES_COLS)
     df_stock_raw = get_sheet_data("inventory_log", INVENTORY_COLS)
     df_cap_raw = get_sheet_data("capital", CAPITAL_COLS)
+    df_settle_raw = get_sheet_data("settlements", SETTLEMENTS_COLS)
 
-    # Convert numeric fields
     if not df_cap_raw.empty:
         df_cap_raw['amount'] = pd.to_numeric(df_cap_raw['amount'], errors='coerce').fillna(0.0)
     if not df_sales_raw.empty:
         df_sales_raw['amount'] = pd.to_numeric(df_sales_raw['amount'], errors='coerce').fillna(0.0)
     if not df_exp_raw.empty:
         df_exp_raw['amount'] = pd.to_numeric(df_exp_raw['amount'], errors='coerce').fillna(0.0)
+    if not df_settle_raw.empty:
+        df_settle_raw['amount'] = pd.to_numeric(df_settle_raw['amount'], errors='coerce').fillna(0.0)
 
-    # Lifetime Financial Calculations
     lifetime_capital = df_cap_raw['amount'].sum() if not df_cap_raw.empty else 0.0
     lifetime_sales = df_sales_raw['amount'].sum() if not df_sales_raw.empty else 0.0
     lifetime_expenses = df_exp_raw['amount'].sum() if not df_exp_raw.empty else 0.0
-    
     lifetime_profit = lifetime_sales - lifetime_expenses
-    current_cash_in_hand = (lifetime_capital + lifetime_sales) - lifetime_expenses
 
-    # Top Dual Overview Cards: Lifetime Profit & Cash in Hand
-    top_c1, top_c2 = st.columns(2)
+    # Total Cash Collected from Landlord
+    # Default fallback: August sales (49,777) if settlements sheet is new/empty
+    if not df_settle_raw.empty:
+        total_cash_collected_from_landlord = df_settle_raw['amount'].sum()
+    else:
+        # Auto-compute August collection as initial base
+        df_s_aug = df_sales_raw.copy()
+        if not df_s_aug.empty:
+            df_s_aug['date_p'] = pd.to_datetime(df_s_aug['entry_date'], errors='coerce')
+            total_cash_collected_from_landlord = df_s_aug[df_s_aug['date_p'] <= '2026-08-31']['amount'].sum()
+        else:
+            total_cash_collected_from_landlord = 0.0
+
+    # Landlord Due & Actual Drawer Cash
+    sales_with_landlord = max(0.0, lifetime_sales - total_cash_collected_from_landlord)
+    actual_cash_in_hand = (lifetime_capital + total_cash_collected_from_landlord) - lifetime_expenses
+
+    # Top Overview Metrics (3 Cards)
+    top_c1, top_c2, top_c3 = st.columns(3)
     with top_c1:
         st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; padding: 16px 18px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #334155; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8;">🌟 Total Lifetime Profit (Till Date)</div>
-            <div style="font-size: 24px; font-weight: 800; margin-top: 4px; color: {'#4ade80' if lifetime_profit >= 0 else '#f87171'};">
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; padding: 14px 16px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #334155;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8;">🌟 Lifetime Profit</div>
+            <div style="font-size: 22px; font-weight: 800; margin-top: 3px; color: {'#4ade80' if lifetime_profit >= 0 else '#f87171'};">
                 {'+ ' if lifetime_profit >= 0 else '- '}Rs. {abs(lifetime_profit):,.2f}
             </div>
-            <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Cumulative Net Profit Since Launch</div>
+            <div style="font-size: 10px; color: #94a3b8;">Total Sales − Total Expenses</div>
         </div>
         """, unsafe_allow_html=True)
 
     with top_c2:
         st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: #ffffff; padding: 16px 18px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(6, 95, 70, 0.2);">
-            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0;">💰 Live Cash in Hand</div>
-            <div style="font-size: 24px; font-weight: 800; margin-top: 4px; color: #ffffff;">
-                Rs. {current_cash_in_hand:,.2f}
+        <div style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: #ffffff; padding: 14px 16px; border-radius: 10px; margin-bottom: 15px;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0;">💰 Drawer Cash in Hand</div>
+            <div style="font-size: 22px; font-weight: 800; margin-top: 3px; color: #ffffff;">
+                Rs. {actual_cash_in_hand:,.2f}
             </div>
-            <div style="font-size: 11px; color: #d1fae5; margin-top: 2px;">(Capital + Total Sales) − Total Expenses</div>
+            <div style="font-size: 10px; color: #d1fae5;">(Capital + Cash Collected) − Expenses</div>
         </div>
         """, unsafe_allow_html=True)
 
-    # Month-on-Month (MoM) Profit Breakdown Table
+    with top_c3:
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #854d0e 0%, #a16207 100%); color: #ffffff; padding: 14px 16px; border-radius: 10px; margin-bottom: 15px;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #fef08a;">🏦 Pending with Landlord</div>
+            <div style="font-size: 22px; font-weight: 800; margin-top: 3px; color: #ffffff;">
+                Rs. {sales_with_landlord:,.2f}
+            </div>
+            <div style="font-size: 10px; color: #fef9c3;">Uncollected Sales Cash</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # MoM Table
     if not df_sales_raw.empty or not df_exp_raw.empty:
         df_s_mom = df_sales_raw.copy()
         df_s_mom['month'] = pd.to_datetime(df_s_mom['entry_date'], errors='coerce').dt.strftime('%Y-%m')
@@ -684,9 +592,10 @@ if choice == "📊 Reports & Analytics":
         df_mom_disp['Profit'] = df_mom_disp['Profit'].apply(lambda x: f"+ Rs. {x:,.2f}" if x >= 0 else f"- Rs. {abs(x):,.2f}")
         df_mom_disp = df_mom_disp.rename(columns={'month': 'Month (YYYY-MM)', 'Sales': 'Total Sales', 'Expenses': 'Total Expenses', 'Profit': 'Net Profit / Loss'})
 
-        with st.expander("📅 Month-on-Month (MoM) Profit & Performance Ledger", expanded=True):
+        with st.expander("📅 Month-on-Month (MoM) Profit Ledger", expanded=True):
             st.dataframe(df_mom_disp, use_container_width=True, hide_index=True)
 
+    # Date Range Filter
     col_d1, col_d2 = st.columns(2)
     with col_d1:
         start_date = st.date_input("Start Date", value=date(2026, 8, 1))
@@ -719,8 +628,8 @@ if choice == "📊 Reports & Analytics":
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_summary = pd.DataFrame({
-                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day", "Lifetime Profit Till Date", "Current Cash in Hand"],
-                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day, lifetime_profit, current_cash_in_hand]
+                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day", "Lifetime Profit", "Cash in Hand", "Pending with Landlord"],
+                "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day, lifetime_profit, actual_cash_in_hand, sales_with_landlord]
             })
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
             df_sales.drop(columns=['date_parsed'], errors='ignore').to_excel(writer, sheet_name='Sales Register', index=False)
@@ -868,16 +777,43 @@ if choice == "📊 Reports & Analytics":
         st.error("Start Date must be before or equal to End Date.")
 
 # -------------------------------------------------------------
-# 2. Daily Entry Section
+# 2. Daily Entry Section (With Cash Settlement from Landlord)
 # -------------------------------------------------------------
 elif choice == "📝 Daily Entry":
     if not is_admin:
         st.warning("⚠️ You have Read-Only access.")
         st.stop()
 
-    st.subheader("📝 Daily Sales & Expense Entry")
-    col1, col2 = st.columns(2)
+    st.subheader("📝 Daily Sales, Expense & Landlord Settlements")
     
+    # Quick Settlement Box for Landlord Payout
+    with st.expander("🏦 Record Cash Received from Landlord (Weekly / Fortnightly Collection)", expanded=False):
+        with st.form("landlord_settle_form", clear_on_submit=True):
+            set_date = st.date_input("Settlement Date", value=date.today())
+            set_amount = st.number_input("Cash Received Amount (Rs.)", min_value=0.0, value=None, placeholder="0.00", step=500.0, format="%.2f")
+            set_note = st.text_input("Note / Period Details", placeholder="e.g. Sales cash collected from 1st to 15th Sept")
+            
+            if st.form_submit_button("Record Landlord Cash Payout", type="primary"):
+                final_set_amt = float(set_amount) if set_amount is not None else 0.0
+                if final_set_amt > 0:
+                    df_set = get_sheet_data("settlements", SETTLEMENTS_COLS)
+                    new_id = 1 if df_set.empty else int(pd.to_numeric(df_set['id'], errors='coerce').fillna(0).max() + 1)
+                    new_row = pd.DataFrame([{
+                        "id": new_id,
+                        "entry_date": str(set_date),
+                        "amount": float(final_set_amt),
+                        "note": set_note.strip() if set_note else "Landlord Sales Payout",
+                        "created_by": current_user_tag
+                    }])
+                    df_set = pd.concat([df_set, new_row], ignore_index=True)
+                    update_sheet_data("settlements", df_set)
+                    update_user_heartbeat(st.session_state.username)
+                    st.success(f"✅ Cash Payout of Rs. {final_set_amt:,.2f} received from Landlord recorded!")
+                    st.rerun()
+                else:
+                    st.error("Please enter a valid cash amount.")
+
+    col1, col2 = st.columns(2)
     with col1:
         st.markdown("### 💰 Sales Entry")
         with st.form("sale_form", clear_on_submit=True):
@@ -1107,24 +1043,5 @@ elif choice == "💼 Capital Management":
             
             st.caption("👆 **Tip:** Tap on any row to select it, then tap Edit or Delete below.")
             event_cap = st.dataframe(table_disp_cap, use_container_width=True, on_select="rerun", selection_mode="single-row", key="table_cap_sel", hide_index=True)
-            
-            if is_admin:
-                selected_rows_cap = event_cap.selection.rows if hasattr(event_cap, 'selection') else []
-                sel_cap_id = df_cap_disp.iloc[selected_rows_cap[0]]['id'] if selected_rows_cap else None
-                
-                st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
-                btn_c1, btn_c2 = st.columns(2)
-                with btn_c1:
-                    if st.button("✏️ Edit Selected Capital", use_container_width=True, key="btn_edit_cap_tap"):
-                        if sel_cap_id is not None:
-                            edit_capital_dialog(sel_cap_id)
-                        else:
-                            st.warning("Please tap on a row in the table above first.")
-                with btn_c2:
-                    if st.button("🗑️ Delete Selected Capital", use_container_width=True, key="btn_del_cap_tap"):
-                        if sel_cap_id is not None:
-                            confirm_delete_cap_dialog(sel_cap_id)
-                        else:
-                            st.warning("Please tap on a row in the table above first.")
         else:
             st.info("No capital contributions found in Google Sheet.")
