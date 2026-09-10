@@ -138,31 +138,31 @@ ALL_PARTNERS = ["Abhijit", "Jit", "Debasis", "Sumit"]
 PRODUCT_OPTIONS = [
     "Total Food",
     "Water & Cold Drinks",
-    "বাদাম চাট (Rs. 60)",
-    "পাপড় রোস্ট (Rs. 10)",
-    "ফ্রেঞ্চ ফ্রাই (Rs. 60)",
-    "গ্রিন স্যালাড (Rs. 50)",
-    "ভেজ পকোড়া (Rs. 90)",
-    "ক্রিসপি চিলি বেবিকর্ন (Rs. 140)",
-    "চিলি মাশরুম (Rs. 160)",
-    "ডিমের ওমলেট (Rs. 40)",
-    "ডিমের পোচ (Rs. 40)",
-    "ডিমের ভুজিয়া (Rs. 40)",
-    "ডিমের পকোড়া (Rs. 60)",
-    "চিকেন পকোড়া Full (Rs. 120)",
-    "চিকেন পকোড়া Half (Rs. 80)",
-    "চিকেন ফ্রাই (Rs. 160)",
-    "ক্রিসপি চিকেন (Rs. 160)",
-    "চিকেন 65 (Rs. 160)",
-    "চিকেন চটপটা (Rs. 160)",
-    "চিকেন কষা Full (Rs. 120)",
-    "চিকেন কষা Half (Rs. 70)",
-    "চিলি চিকেন Full (Rs. 150)",
-    "চিলি চিকেন Half (Rs. 90)",
-    "চিকেন ভর্তা (Rs. 150)",
-    "চিকেন দোপিয়াজা (Rs. 150)",
-    "চিকেন মাসালা (Rs. 150)",
-    "রুটি (Rs. 5)",
+    "Badam Chaat (Rs. 60)",
+    "Papad Roast (Rs. 10)",
+    "French Fries (Rs. 60)",
+    "Green Salad (Rs. 50)",
+    "Veg Pakora (Rs. 90)",
+    "Crispy Chilli Babycorn (Rs. 140)",
+    "Chilli Mushroom (Rs. 160)",
+    "Egg Omelette (Rs. 40)",
+    "Egg Poach (Rs. 40)",
+    "Egg Bhujia (Rs. 40)",
+    "Egg Pakora (Rs. 60)",
+    "Chicken Pakora Full (Rs. 120)",
+    "Chicken Pakora Half (Rs. 80)",
+    "Chicken Fry (Rs. 160)",
+    "Crispy Chicken (Rs. 160)",
+    "Chicken 65 (Rs. 160)",
+    "Chicken Chatpata (Rs. 160)",
+    "Chicken Kosha Full (Rs. 120)",
+    "Chicken Kosha Half (Rs. 70)",
+    "Chilli Chicken Full (Rs. 150)",
+    "Chilli Chicken Half (Rs. 90)",
+    "Chicken Bharta (Rs. 150)",
+    "Chicken Do Pyaza (Rs. 150)",
+    "Chicken Masala (Rs. 150)",
+    "Roti (Rs. 5)",
     "Other"
 ]
 
@@ -185,7 +185,7 @@ EXPENSE_CATEGORIES = [
 ]
 
 TRACKED_ITEMS = [
-    "Egg (পিস)", 
+    "Egg (Pcs)", 
     "Water Bottle 1L", 
     "Water Bottle 500 ml", 
     "Campa Rs. 20", 
@@ -617,7 +617,7 @@ st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 if choice == "📊 Reports & Analytics":
     st.subheader("📊 Profit & Loss Summary & Excel Export")
     
-    # Fetch all Raw Data for accurate Cash in Hand & Date Filter calculations
+    # Fetch all Raw Data for accurate Cash Balance & Date Filter calculations
     df_sales_raw = get_sheet_data("sales", SALES_COLS)
     df_exp_raw = get_sheet_data("expenses", EXPENSES_COLS)
     df_stock_raw = get_sheet_data("inventory_log", INVENTORY_COLS)
@@ -631,18 +631,17 @@ if choice == "📊 Reports & Analytics":
     if not df_exp_raw.empty:
         df_exp_raw['amount'] = pd.to_numeric(df_exp_raw['amount'], errors='coerce').fillna(0.0)
 
-    # Calculate Lifetime Balances for Live Cash in Hand
-    lifetime_capital = df_cap_raw['amount'].sum() if not df_cap_raw.empty else 0.0
+    # Calculate Lifetime Sales & Expenses for Actual Net Rolling Cash Balance
     lifetime_sales = df_sales_raw['amount'].sum() if not df_sales_raw.empty else 0.0
     lifetime_expenses = df_exp_raw['amount'].sum() if not df_exp_raw.empty else 0.0
-    current_cash_in_hand = (lifetime_capital + lifetime_sales) - lifetime_expenses
+    current_cash_in_hand = lifetime_sales - lifetime_expenses
 
-    # Live Cash in Hand Display Banner
+    # Live Net Cash Display Banner
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #065f46 0%, #047857 100%); color: #ffffff; padding: 16px 20px; border-radius: 10px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(6, 95, 70, 0.25);">
         <div>
-            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0;">💰 Live Cash in Hand</div>
-            <div style="font-size: 12px; color: #e7f5ef; margin-top: 2px;">(ক্যাশিয়ারের ড্রয়ারের মোট অবশিষ্ট ক্যাশ ব্যালেন্স)</div>
+            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a7f3d0;">💰 Live Net Cash Balance</div>
+            <div style="font-size: 11px; color: #e7f5ef; margin-top: 2px;">Total Lifetime Sales Minus Total Lifetime Expenses</div>
         </div>
         <div style="font-size: 26px; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Rs. {current_cash_in_hand:,.2f}</div>
     </div>
@@ -680,7 +679,7 @@ if choice == "📊 Reports & Analytics":
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_summary = pd.DataFrame({
-                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day", "Current Live Cash in Hand"],
+                "Report Metric": ["Period Start", "Period End", "Total Sales", "Total Expenses", "Net Profit / Loss", "Avg Sale/Day", "Avg Exp/Day", "Current Live Net Cash Balance"],
                 "Value": [str(start_date), str(end_date), total_sale, total_exp, net_profit, avg_sale_day, avg_exp_day, current_cash_in_hand]
             })
             df_summary.to_excel(writer, sheet_name='P&L Summary', index=False)
