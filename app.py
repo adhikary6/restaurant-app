@@ -111,7 +111,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_sheet_data(worksheet_name, expected_cols):
     try:
-        # Cache for 10 seconds to avoid Google Sheets API 500 error & rate limits
+        # Cache for 10s to prevent API Rate Limits & 500 Server Errors
         df = conn.read(worksheet=worksheet_name, ttl=10)
         if df is None or df.empty:
             return pd.DataFrame(columns=expected_cols)
@@ -568,38 +568,57 @@ if choice == "📊 Reports & Analytics":
     if not df_settle_raw.empty:
         df_settle_raw['amount'] = pd.to_numeric(df_settle_raw['amount'], errors='coerce').fillna(0.0)
 
-    # Core Lifetime Figures
+    # Core Figures
     lifetime_capital = df_cap_raw['amount'].sum() if not df_cap_raw.empty else 0.0
     lifetime_sales = df_sales_raw['amount'].sum() if not df_sales_raw.empty else 0.0
     lifetime_expenses = df_exp_raw['amount'].sum() if not df_exp_raw.empty else 0.0
     lifetime_profit = lifetime_sales - lifetime_expenses
 
-    # Separate Lifetime Sales: Inside Counter vs Outside Stall
+    # ---------------------------------------------------------
+    # DATE BOUNDARY RULE (Cutoff: October 1, 2026)
+    # ---------------------------------------------------------
+    cutoff_date = date(2026, 10, 1)
+
     if not df_sales_raw.empty:
-        lifetime_inside_sales = df_sales_raw[df_sales_raw['counter_type'] == "Inside Counter / Dining"]['amount'].sum()
-        lifetime_outside_sales = df_sales_raw[df_sales_raw['counter_type'] == "Outside Stall"]['amount'].sum()
+        df_sales_calc = df_sales_raw.copy()
+        df_sales_calc['date_obj'] = pd.to_datetime(df_sales_calc['entry_date'], errors='coerce').dt.date
+
+        # Rule A: Up to 30th Sept, ALL sales (Inside + Outside) belonged to Landlord
+        sales_pre_oct = df_sales_calc[df_sales_calc['date_obj'] < cutoff_date]['amount'].sum()
+
+        # Rule B: From 1st Oct onwards, ONLY Inside Counter goes to Landlord
+        sales_post_oct_inside = df_sales_calc[
+            (df_sales_calc['date_obj'] >= cutoff_date) & 
+            (df_sales_calc['counter_type'] == "Inside Counter / Dining")
+        ]['amount'].sum()
+
+        # Rule C: From 1st Oct onwards, Outside Stall STAYS IN HAND (Cash Drawer)
+        outside_sales_in_hand = df_sales_calc[
+            (df_sales_calc['date_obj'] >= cutoff_date) & 
+            (df_sales_calc['counter_type'] == "Outside Stall")
+        ]['amount'].sum()
+
+        # Total sales collected/held by Landlord
+        total_sales_routed_to_landlord = sales_pre_oct + sales_post_oct_inside
     else:
-        lifetime_inside_sales = 0.0
-        lifetime_outside_sales = 0.0
+        total_sales_routed_to_landlord = 0.0
+        outside_sales_in_hand = 0.0
 
     # Total Cash Collected from Landlord
     if not df_settle_raw.empty:
         total_cash_collected_from_landlord = df_settle_raw['amount'].sum()
     else:
-        # Fallback: August inside sales if no settlement record exists yet
+        # Fallback: Up to 31st August sales if no explicit settlement record added yet
         df_s_aug = df_sales_raw.copy()
         if not df_s_aug.empty:
             df_s_aug['date_p'] = pd.to_datetime(df_s_aug['entry_date'], errors='coerce')
-            total_cash_collected_from_landlord = df_s_aug[(df_s_aug['date_p'] <= '2026-08-31') & (df_s_aug['counter_type'] == "Inside Counter / Dining")]['amount'].sum()
+            total_cash_collected_from_landlord = df_s_aug[df_s_aug['date_p'] <= '2026-08-31']['amount'].sum()
         else:
             total_cash_collected_from_landlord = 0.0
 
-    # ACCURATE LOGIC:
-    # 1. Pending with Landlord ONLY counts Inside Counter Sales minus Collected Cash
-    sales_with_landlord = max(0.0, lifetime_inside_sales - total_cash_collected_from_landlord)
-    
-    # 2. Cash in Hand directly includes Outside Sales (never goes to Landlord) + Capital + Cash Taken from Landlord - Expenses
-    actual_cash_in_hand = (lifetime_capital + total_cash_collected_from_landlord + lifetime_outside_sales) - lifetime_expenses
+    # Exact Balances
+    sales_with_landlord = max(0.0, total_sales_routed_to_landlord - total_cash_collected_from_landlord)
+    actual_cash_in_hand = (lifetime_capital + total_cash_collected_from_landlord + outside_sales_in_hand) - lifetime_expenses
 
     # Top Overview Metrics (3 Cards)
     top_c1, top_c2, top_c3 = st.columns(3)
@@ -610,7 +629,7 @@ if choice == "📊 Reports & Analytics":
             <div style="font-size: 22px; font-weight: 800; margin-top: 3px; color: {'#4ade80' if lifetime_profit >= 0 else '#f87171'};">
                 {'+ ' if lifetime_profit >= 0 else '- '}Rs. {abs(lifetime_profit):,.2f}
             </div>
-            <div style="font-size: 10px; color: #94a3b8;">Total Sales − Total Expenses</div>
+            <div style="font-size: 10px; color: #94a3b8;">Total Lifetime Sales − Expenses</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -621,7 +640,7 @@ if choice == "📊 Reports & Analytics":
             <div style="font-size: 22px; font-weight: 800; margin-top: 3px; color: #ffffff;">
                 Rs. {actual_cash_in_hand:,.2f}
             </div>
-            <div style="font-size: 10px; color: #d1fae5;">(Capital + Outside Sales + Collected) − Exp</div>
+            <div style="font-size: 10px; color: #d1fae5;">Capital + Landlord Cash + Oct Outside Sales − Exp</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -632,7 +651,7 @@ if choice == "📊 Reports & Analytics":
             <div style="font-size: 22px; font-weight: 800; margin-top: 3px; color: #ffffff;">
                 Rs. {sales_with_landlord:,.2f}
             </div>
-            <div style="font-size: 10px; color: #fef9c3;">Inside Sales − Cash Collected</div>
+            <div style="font-size: 10px; color: #fef9c3;">Eligible Landlord Sales − Cash Collected</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -894,7 +913,7 @@ elif choice == "📝 Daily Entry":
     st.subheader("📝 Daily Sales, Expense & Landlord Settlements")
     
     # Landlord Cash Settlement Form & Live History
-    with st.expander("🏦 Record & View Landlord Cash Payouts", expanded=True):
+    with st.expander("🏦 Record & View Landlord Cash Payouts", expanded=False):
         st.markdown("##### 📥 New Cash Collection from Landlord")
         with st.form("landlord_settle_form", clear_on_submit=True):
             set_date = st.date_input("Settlement Date", value=date.today())
