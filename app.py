@@ -111,7 +111,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_sheet_data(worksheet_name, expected_cols):
     try:
-        df = conn.read(worksheet=worksheet_name, ttl=3600)
+        cache_ttl = 0 if worksheet_name == "users" else 3600
+        df = conn.read(worksheet=worksheet_name, ttl=cache_ttl)
         if df is None or df.empty:
             return pd.DataFrame(columns=expected_cols)
         df = df.dropna(how='all')
@@ -121,6 +122,7 @@ def get_sheet_data(worksheet_name, expected_cols):
         return df[expected_cols]
     except Exception:
         return pd.DataFrame(columns=expected_cols)
+
 
 def update_sheet_data(worksheet_name, df):
     df_clean = df.copy()
